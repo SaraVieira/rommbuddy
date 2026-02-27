@@ -1,0 +1,520 @@
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::LazyLock;
+
+use sqlx::SqlitePool;
+use tokio_util::sync::CancellationToken;
+
+use crate::dedup;
+use crate::error::AppResult;
+use crate::models::ScanProgress;
+
+/// Known ROM file extensions -- files matching these are indexed.
+const ROM_EXTENSIONS: &[&str] = &[
+    "gb", "gbc", "gba", "nes", "sfc", "smc", "n64", "z64", "v64",
+    "nds", "3ds", "iso", "bin", "cue", "chd", "rvz", "wbfs", "rom",
+    "md", "gen", "smd", "gg", "sms", "pce", "ngp", "ngc",
+    "ws", "wsc", "lnx", "vb", "zip", "7z", "m3u",
+    "a26", "a78", "col", "sg", "int", "jag",
+    "psx", "pbp", "cso", "xci", "nsp",
+];
+
+/// Detected folder layout convention.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FolderLayout {
+    /// Lowercase slugs: `gb/`, `gba/`, `snes/` -- ES-DE, `RetroPie`, `ArkOS`, `EmuDeck`.
+    EsDe,
+    /// `roms/` subdirectory containing lowercase slugs -- Batocera, KNULLI.
+    Batocera,
+    /// `ROMS/` + `MUOS/` sibling directories.
+    MuOs,
+    /// "Name (TAG)/" pattern -- `MinUI`.
+    MinUi,
+    /// `ALL_CAPS` folder names -- `OnionOS`.
+    OnionOs,
+    /// Could not detect layout; treat folder names as lowercase slugs.
+    Unknown,
+}
+
+/// Maps folder names (lowercase) to canonical platform slugs.
+/// Covers ES-DE, `OnionOS` abbreviations, `MinUI` tags, and common aliases.
+static FOLDER_TO_CANONICAL: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+
+    // -- Nintendo --
+    m.insert("gb", "gb");
+    m.insert("gbc", "gbc");
+    m.insert("gba", "gba");
+    m.insert("nes", "nes");
+    m.insert("fc", "nes");
+    m.insert("famicom", "nes");
+    m.insert("fds", "fds");
+    m.insert("snes", "snes");
+    m.insert("sfc", "snes");
+    m.insert("n64", "n64");
+    m.insert("nds", "nds");
+    m.insert("3ds", "3ds");
+    m.insert("gamecube", "gamecube");
+    m.insert("gc", "gamecube");
+    m.insert("wii", "wii");
+    m.insert("virtualboy", "vb");
+    m.insert("vb", "vb");
+
+    // -- Sony --
+    m.insert("psx", "psx");
+    m.insert("ps", "psx");
+    m.insert("ps1", "psx");
+    m.insert("ps2", "ps2");
+    m.insert("psp", "psp");
+
+    // -- Sega --
+    m.insert("genesis", "genesis");
+    m.insert("megadrive", "genesis");
+    m.insert("md", "genesis");
+    m.insert("segacd", "segacd");
+    m.insert("saturn", "saturn");
+    m.insert("dreamcast", "dreamcast");
+    m.insert("dc", "dreamcast");
+    m.insert("gamegear", "gamegear");
+    m.insert("gg", "gamegear");
+    m.insert("mastersystem", "mastersystem");
+    m.insert("ms", "mastersystem");
+    m.insert("sms", "mastersystem");
+    m.insert("sg-1000", "sg1000");
+    m.insert("sg1000", "sg1000");
+    m.insert("sg", "sg1000");
+
+    // -- SNK / Arcade --
+    m.insert("neogeo", "neogeo");
+    m.insert("arcade", "arcade");
+    m.insert("mame", "arcade");
+    m.insert("fbneo", "arcade");
+    m.insert("fba", "arcade");
+    m.insert("ngp", "ngp");
+    m.insert("ngpc", "ngpc");
+
+    // -- NEC --
+    m.insert("pcengine", "pce");
+    m.insert("pce", "pce");
+    m.insert("tg16", "pce");
+    m.insert("pcenginecd", "pcecd");
+    m.insert("pcecd", "pcecd");
+    m.insert("tgcd", "pcecd");
+    m.insert("supergrafx", "sgfx");
+    m.insert("sgfx", "sgfx");
+    m.insert("pcfx", "pcfx");
+
+    // -- Atari --
+    m.insert("atari2600", "atari2600");
+    m.insert("atari", "atari2600");
+    m.insert("a26", "atari2600");
+    m.insert("atari5200", "atari5200");
+    m.insert("atari7800", "atari7800");
+    m.insert("a78", "atari7800");
+    m.insert("lynx", "lynx");
+    m.insert("atarist", "atarist");
+    m.insert("jaguar", "jaguar");
+
+    // -- Bandai / Other --
+    m.insert("wonderswan", "ws");
+    m.insert("ws", "ws");
+    m.insert("wonderswancolor", "wsc");
+    m.insert("wsc", "wsc");
+    m.insert("coleco", "colecovision");
+    m.insert("colecovision", "colecovision");
+    m.insert("col", "colecovision");
+    m.insert("intellivision", "intellivision");
+    m.insert("int", "intellivision");
+    m.insert("vectrex", "vectrex");
+    m.insert("channelf", "channelf");
+
+    // -- Computers --
+    m.insert("msx", "msx");
+    m.insert("msx2", "msx2");
+    m.insert("dos", "dos");
+    m.insert("amstradcpc", "cpc");
+    m.insert("cpc", "cpc");
+    m.insert("zxspectrum", "zxspectrum");
+    m.insert("c64", "c64");
+    m.insert("amiga", "amiga");
+    m.insert("scummvm", "scummvm");
+
+    // -- Nintendo (handheld misc) --
+    m.insert("pokemini", "pokemini");
+    m.insert("sufami", "sufami");
+
+    m
+});
+
+/// Display names for platforms (used when auto-creating in DB).
+static PLATFORM_DISPLAY_NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("gb", "Game Boy");
+    m.insert("gbc", "Game Boy Color");
+    m.insert("gba", "Game Boy Advance");
+    m.insert("nes", "NES / Famicom");
+    m.insert("fds", "Famicom Disk System");
+    m.insert("snes", "SNES / Super Famicom");
+    m.insert("n64", "Nintendo 64");
+    m.insert("nds", "Nintendo DS");
+    m.insert("3ds", "Nintendo 3DS");
+    m.insert("gamecube", "GameCube");
+    m.insert("wii", "Wii");
+    m.insert("vb", "Virtual Boy");
+    m.insert("psx", "PlayStation");
+    m.insert("ps2", "PlayStation 2");
+    m.insert("psp", "PlayStation Portable");
+    m.insert("genesis", "Sega Genesis / Mega Drive");
+    m.insert("segacd", "Sega CD");
+    m.insert("saturn", "Sega Saturn");
+    m.insert("dreamcast", "Dreamcast");
+    m.insert("gamegear", "Game Gear");
+    m.insert("mastersystem", "Master System");
+    m.insert("sg1000", "SG-1000");
+    m.insert("neogeo", "Neo Geo");
+    m.insert("arcade", "Arcade");
+    m.insert("ngp", "Neo Geo Pocket");
+    m.insert("ngpc", "Neo Geo Pocket Color");
+    m.insert("pce", "TurboGrafx-16 / PC Engine");
+    m.insert("pcecd", "TurboGrafx-CD");
+    m.insert("sgfx", "SuperGrafx");
+    m.insert("pcfx", "PC-FX");
+    m.insert("atari2600", "Atari 2600");
+    m.insert("atari5200", "Atari 5200");
+    m.insert("atari7800", "Atari 7800");
+    m.insert("lynx", "Atari Lynx");
+    m.insert("atarist", "Atari ST");
+    m.insert("jaguar", "Atari Jaguar");
+    m.insert("ws", "WonderSwan");
+    m.insert("wsc", "WonderSwan Color");
+    m.insert("colecovision", "ColecoVision");
+    m.insert("intellivision", "Intellivision");
+    m.insert("vectrex", "Vectrex");
+    m.insert("channelf", "Channel F");
+    m.insert("msx", "MSX");
+    m.insert("msx2", "MSX2");
+    m.insert("dos", "DOS");
+    m.insert("cpc", "Amstrad CPC");
+    m.insert("zxspectrum", "ZX Spectrum");
+    m.insert("c64", "Commodore 64");
+    m.insert("amiga", "Amiga");
+    m.insert("scummvm", "ScummVM");
+    m.insert("pokemini", "Pokemon Mini");
+    m.insert("sufami", "Sufami Turbo");
+    m
+});
+
+/// Detect the folder layout convention of a ROM directory.
+pub fn detect_layout(root: &Path) -> FolderLayout {
+    let entries: Vec<String> = match std::fs::read_dir(root) {
+        Ok(rd) => rd
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
+        Err(e) => {
+            log::warn!("Failed to read directory {}: {e}", root.display());
+            return FolderLayout::Unknown;
+        }
+    };
+
+    if entries.is_empty() {
+        return FolderLayout::Unknown;
+    }
+
+    // `MuOS`: has both `ROMS/` and `MUOS/` directories
+    if entries.iter().any(|n| n == "ROMS") && entries.iter().any(|n| n == "MUOS") {
+        return FolderLayout::MuOs;
+    }
+
+    // Batocera/KNULLI/`ArkOS`: has a `roms/` or `EASYROMS/` subdirectory
+    let batocera_dir = if entries.iter().any(|n| n == "roms") {
+        Some(root.join("roms"))
+    } else if entries.iter().any(|n| n == "EASYROMS") {
+        Some(root.join("EASYROMS"))
+    } else {
+        None
+    };
+    if let Some(roms_sub) = batocera_dir {
+        if let Ok(sub_entries) = std::fs::read_dir(&roms_sub) {
+            let sub_names: Vec<String> = sub_entries
+                .filter_map(std::result::Result::ok)
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            let known_count = sub_names
+                .iter()
+                .filter(|n| FOLDER_TO_CANONICAL.contains_key(n.to_lowercase().as_str()))
+                .count();
+            if known_count >= 2 {
+                return FolderLayout::Batocera;
+            }
+        }
+    }
+
+    // `MinUI`: folders matching "Anything (TAG)" pattern
+    let minui_count = entries
+        .iter()
+        .filter(|n| {
+            n.contains('(')
+                && n.ends_with(')')
+                && n.rfind('(').is_some_and(|i| i > 0)
+        })
+        .count();
+    if minui_count >= 3 {
+        return FolderLayout::MinUi;
+    }
+
+    // `OnionOS`: all-uppercase folder names matching known set
+    let upper_count = entries
+        .iter()
+        .filter(|n| {
+            !n.is_empty()
+                && n.chars()
+                    .all(|c| c.is_uppercase() || c.is_ascii_digit() || c == '_')
+        })
+        .count();
+    if upper_count > entries.len() / 2 && upper_count >= 3 {
+        return FolderLayout::OnionOs;
+    }
+
+    // ES-DE / `ArkOS`: lowercase slug folders matching known platforms
+    let esde_count = entries
+        .iter()
+        .filter(|n| FOLDER_TO_CANONICAL.contains_key(n.as_str()))
+        .count();
+    if esde_count >= 3 {
+        return FolderLayout::EsDe;
+    }
+
+    FolderLayout::Unknown
+}
+
+/// Extract the `MinUI` tag from a folder name like "Game Boy Advance (GBA)" -> "GBA".
+fn extract_minui_tag(folder_name: &str) -> Option<&str> {
+    let open = folder_name.rfind('(')?;
+    let close = folder_name.rfind(')')?;
+    if close > open + 1 && close == folder_name.len() - 1 {
+        Some(&folder_name[open + 1..close])
+    } else {
+        None
+    }
+}
+
+/// Resolve a folder name to a canonical platform slug using the detected layout.
+fn resolve_folder_to_slug(folder_name: &str, layout: &FolderLayout) -> Option<String> {
+    if layout == &FolderLayout::MinUi {
+        let tag = extract_minui_tag(folder_name)?;
+        let lower = tag.to_lowercase();
+        FOLDER_TO_CANONICAL
+            .get(lower.as_str())
+            .map(|s| (*s).to_string())
+    } else {
+        let lower = folder_name.to_lowercase();
+        let normalized = lower.replace(['-', '_'], "");
+        if let Some(&slug) = FOLDER_TO_CANONICAL.get(lower.as_str()) {
+            Some(slug.to_string())
+        } else {
+            FOLDER_TO_CANONICAL.get(normalized.as_str()).map(|slug| (*slug).to_string())
+        }
+    }
+}
+
+/// Check if a file has a ROM extension.
+fn is_rom_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ROM_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+}
+
+/// Get the actual root for ROM folders depending on layout.
+fn get_roms_root(root: &Path, layout: &FolderLayout) -> std::path::PathBuf {
+    match layout {
+        FolderLayout::Batocera => {
+            let roms = root.join("roms");
+            if roms.exists() { roms } else { root.join("EASYROMS") }
+        }
+        FolderLayout::MuOs => root.join("ROMS"),
+        _ => root.to_path_buf(),
+    }
+}
+
+/// Count total ROM files for progress reporting.
+fn count_rom_files(roms_root: &Path) -> u64 {
+    let mut count: u64 = 0;
+    if let Ok(dirs) = std::fs::read_dir(roms_root) {
+        for entry in dirs.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Ok(files) = std::fs::read_dir(&path) {
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        count += files
+                            .filter_map(std::result::Result::ok)
+                            .filter(|f| is_rom_file(&f.path()))
+                            .count() as u64;
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+/// Test a local path: detect layout and count platforms/ROMs.
+pub fn test_local_path(root: &Path) -> AppResult<(FolderLayout, u32, u64)> {
+    if !root.exists() || !root.is_dir() {
+        return Err(crate::error::AppError::Other(format!(
+            "Path does not exist or is not a directory: {}",
+            root.display()
+        )));
+    }
+
+    let layout = detect_layout(root);
+    let roms_root = get_roms_root(root, &layout);
+
+    let mut platform_count: u32 = 0;
+    let mut rom_count: u64 = 0;
+
+    if let Ok(dirs) = std::fs::read_dir(&roms_root) {
+        for entry in dirs.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let folder_name = entry.file_name().to_string_lossy().into_owned();
+            if resolve_folder_to_slug(&folder_name, &layout).is_some() {
+                #[allow(clippy::cast_possible_truncation)]
+                let file_count = std::fs::read_dir(&path)
+                    .map(|rd| {
+                        rd.filter_map(std::result::Result::ok)
+                            .filter(|f| is_rom_file(&f.path()))
+                            .count() as u64
+                    })
+                    .unwrap_or(0);
+                if file_count > 0 {
+                    platform_count += 1;
+                    rom_count += file_count;
+                }
+            }
+        }
+    }
+
+    Ok((layout, platform_count, rom_count))
+}
+
+/// Sync a local filesystem source into the database.
+pub async fn sync_local_to_db(
+    source_id: i64,
+    root: &Path,
+    pool: &SqlitePool,
+    on_progress: impl Fn(ScanProgress) + Send,
+    cancel: CancellationToken,
+) -> AppResult<()> {
+    let layout = detect_layout(root);
+    let roms_root = get_roms_root(root, &layout);
+    let total_roms = count_rom_files(&roms_root);
+    let mut current: u64 = 0;
+
+    let mut dirs: Vec<_> = std::fs::read_dir(&roms_root)?
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.path().is_dir())
+        .collect();
+    dirs.sort_by_key(std::fs::DirEntry::file_name);
+
+    for dir_entry in dirs {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let folder_name = dir_entry.file_name().to_string_lossy().into_owned();
+        let Some(canonical_slug) = resolve_folder_to_slug(&folder_name, &layout) else {
+            continue;
+        };
+
+        // Find or create platform
+        let platform_row = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM platforms WHERE slug = ?",
+        )
+        .bind(&canonical_slug)
+        .fetch_optional(pool)
+        .await?;
+
+        let local_platform_id = if let Some((id,)) = platform_row {
+            id
+        } else {
+            let fallback = canonical_slug.as_str();
+            let display_name = PLATFORM_DISPLAY_NAMES
+                .get(canonical_slug.as_str())
+                .unwrap_or(&fallback);
+            log::info!(
+                "Creating new platform: slug='{canonical_slug}', name='{display_name}'",
+            );
+            sqlx::query_scalar::<_, i64>(
+                "INSERT INTO platforms (slug, name, file_extensions, folder_aliases)
+                 VALUES (?, ?, '[]', '[]')
+                 RETURNING id",
+            )
+            .bind(&canonical_slug)
+            .bind(display_name)
+            .fetch_one(pool)
+            .await?
+        };
+
+        // Iterate ROM files in this platform folder
+        let mut files: Vec<_> = std::fs::read_dir(dir_entry.path())?
+            .filter_map(std::result::Result::ok)
+            .filter(|e| is_rom_file(&e.path()))
+            .collect();
+        files.sort_by_key(std::fs::DirEntry::file_name);
+
+        for file_entry in files {
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+
+            current += 1;
+            let file_path = file_entry.path();
+            let file_name = file_entry.file_name().to_string_lossy().into_owned();
+            let rom_name = file_path
+                .file_stem()
+                .map_or_else(|| file_name.clone(), |s| s.to_string_lossy().into_owned());
+
+            on_progress(ScanProgress {
+                source_id,
+                total: total_roms,
+                current,
+                current_item: rom_name.clone(),
+            });
+
+            #[allow(clippy::cast_possible_wrap)]
+            let file_size = file_entry.metadata().map(|m| m.len() as i64).ok();
+
+            // Upsert into roms + source_roms via dedup logic
+            let abs_path = file_path.to_string_lossy().into_owned();
+            let _rom_id = dedup::upsert_rom_deduped(
+                pool,
+                local_platform_id,
+                &rom_name,
+                &file_name,
+                file_size,
+                "[]",
+                None,
+                source_id,
+                Some(&abs_path),
+                None,
+            )
+            .await?;
+        }
+    }
+
+    // Update source last_synced_at
+    sqlx::query(
+        "UPDATE sources SET last_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+    )
+    .bind(source_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}

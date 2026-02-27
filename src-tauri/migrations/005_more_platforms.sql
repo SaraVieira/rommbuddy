@@ -1,0 +1,2 @@
+-- Platforms are now auto-created during ROMM sync, so this migration is intentionally empty.
+-- It must exist because it was previously applied to the database.

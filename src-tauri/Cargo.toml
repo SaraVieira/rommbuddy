@@ -1,0 +1,63 @@
+[package]
+name = "romm-buddy"
+version = "0.1.0"
+description = "A Tauri ROM manager with pluggable sources"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "romm_buddy_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core + plugins
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-http = "2"
+tauri-plugin-mcp-bridge = "0.9"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
+# HTTP & async
+reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "gzip", "brotli", "http2", "rustls-tls", "charset"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# XML parsing (DAT files)
+quick-xml = { version = "0.36", features = ["serialize"] }
+
+# HTML parsing
+scraper = "0.22"
+
+# Hashing (lazy, for local source enrichment)
+crc32fast = "1"
+md-5 = "0.10"
+sha1 = "0.10"
+
+# Filesystem watching (local source, stubbed for now)
+notify = { version = "6", features = ["macos_fsevent"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+async-trait = "0.1"
+futures-util = "0.3"
+log = "0.4"
+regex = "1"
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+dirs = "6"
+base64 = "0.22"
+zip = "2"

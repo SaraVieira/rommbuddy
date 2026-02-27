@@ -1,0 +1,343 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+/*
+ ---break---
+ */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * RoMM Buddy Design System
+ * Theme: Industrial Terminal — dark blacks + neon green
+ * Fonts: JetBrains Mono (UI), Space Grotesk (headlines)
+ */
+
+@theme {
+  /* ─── Backgrounds ─── */
+  --color-bg-page: #0C0C0C;
+  --color-bg-sidebar: #080808;
+  --color-bg-card: #0A0A0A;
+  --color-bg-elevated: #141414;
+  --color-bg-subtle: #1A1A1A;
+  --color-bg-overlay: #00000080;
+
+  /* ─── Primary Accent — Neon Green ─── */
+  --color-accent: #00FF88;
+  --color-accent-tint-40: #00FF8840;
+  --color-accent-tint-20: #00FF8820;
+  --color-accent-tint-10: #00FF8810;
+
+  /* ─── Secondary Accent — Warning Orange ─── */
+  --color-warning: #FF8800;
+  --color-warning-tint-40: #FF880040;
+  --color-warning-tint-20: #FF880020;
+
+  /* ─── Error ─── */
+  --color-error: #FF4444;
+
+  /* ─── Neutral Text ─── */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #8a8a8a;
+  --color-text-muted: #6a6a6a;
+  --color-text-dim: #4a4a4a;
+  --color-text-on-accent: #0C0C0C;
+
+  /* ─── Borders ─── */
+  --color-border: #2f2f2f;
+  --color-border-light: #3f3f3f;
+  --color-border-accent: #00FF88;
+  --color-border-accent-tint: #00FF8840;
+  --color-border-warning: #FF880040;
+
+  /* ─── Typography ─── */
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+
+  /* ─── Font Sizes ─── */
+  --font-size-display: 42px;
+  --font-size-metric: 32px;
+  --font-size-page-title: 32px;
+  --font-size-section: 18px;
+  --font-size-logo: 16px;
+  --font-size-search-lg: 16px;
+  --font-size-subtitle: 14px;
+  --font-size-body: 13px;
+  --font-size-nav: 12px;
+  --font-size-label: 11px;
+  --font-size-badge: 10px;
+  --font-size-tiny: 9px;
+
+  /* ─── Spacing ─── */
+  --spacing-xs: 2px;
+  --spacing-sm: 4px;
+  --spacing-md: 8px;
+  --spacing-lg: 12px;
+  --spacing-xl: 16px;
+  --spacing-2xl: 20px;
+  --spacing-3xl: 24px;
+  --spacing-4xl: 28px;
+  --spacing-5xl: 32px;
+  --spacing-6xl: 40px;
+  --spacing-7xl: 48px;
+
+  /* ─── Layout ─── */
+  --width-sidebar: 240px;
+  --height-logo-mark: 32px;
+  --height-avatar: 36px;
+  --height-icon-container: 36px;
+
+  /* ─── Shadows (glow effects) ─── */
+  --shadow-accent-glow: 0 0 6px #00FF8840;
+
+  /* ─── Animations ─── */
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ─── Base Styles ─── */
+@layer base {
+  html {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-page);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  /* macOS traffic light spacing */
+  body {
+    overflow: hidden;
+  }
+}
+
+/* ─── Shared Component Classes ─── */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: var(--spacing-md) var(--spacing-xl);
+    border-radius: 0;
+    border: none;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background-color: var(--color-accent);
+    color: var(--color-text-on-accent);
+  }
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  .btn-secondary {
+    background-color: var(--color-bg-elevated);
+    color: var(--color-accent);
+    border: 1px solid var(--color-accent);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-accent-tint-10);
+  }
+  .btn-danger {
+    background-color: transparent;
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background-color: var(--color-error);
+    color: var(--color-text-primary);
+  }
+  .btn-sm {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-size: var(--font-size-nav);
+  }
+
+  .card {
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 0;
+    padding: var(--spacing-3xl);
+  }
+
+  .page h1 {
+    font-family: var(--font-display);
+    font-size: var(--font-size-page-title);
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: var(--spacing-md);
+  }
+  .page p {
+    color: var(--color-text-secondary);
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-xl);
+  }
+  .form-group label {
+    font-size: var(--font-size-body);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+  .form-group input,
+  .form-group select {
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-radius: 0;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus,
+  .form-group select:focus {
+    border-color: var(--color-accent);
+  }
+  .form-group input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  .status-success {
+    color: var(--color-accent);
+  }
+  .status-error {
+    color: var(--color-error);
+  }
+  .status-ok {
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .status-missing {
+    color: var(--color-error);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+
+  .error-message {
+    color: var(--color-error);
+    font-size: var(--font-size-body);
+    margin-top: var(--spacing-sm);
+  }
+
+  .btn-row {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+  }
+
+  .rom-grid {
+    display: grid;
+    gap: var(--spacing-xl);
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+/* ─── Keyframe Animations ─── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/*
+ ---break---
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*
+ ---break---
+ */
+
+:root {
+  --radius: 0;
+  --background: #0C0C0C;
+  --foreground: #FFFFFF;
+  --card: #0A0A0A;
+  --card-foreground: #FFFFFF;
+  --popover: #141414;
+  --popover-foreground: #FFFFFF;
+  --primary: #00FF88;
+  --primary-foreground: #0C0C0C;
+  --secondary: #141414;
+  --secondary-foreground: #FFFFFF;
+  --muted: #1A1A1A;
+  --muted-foreground: #6a6a6a;
+  --accent: #00FF88;
+  --accent-foreground: #0C0C0C;
+  --destructive: #FF4444;
+  --border: #2f2f2f;
+  --input: #141414;
+  --ring: #00FF8840;
+}
