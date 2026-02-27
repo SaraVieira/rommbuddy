@@ -105,11 +105,11 @@ export default function EmulatorsTab() {
             <span
               className={
                 emulatorPaths[emu.id]
-                  ? "text-accent font-mono font-semibold"
-                  : "text-text-muted font-mono font-semibold"
+                  ? "text-accent font-mono font-semibold uppercase"
+                  : "text-text-muted font-mono font-semibold uppercase"
               }
             >
-              {emulatorPaths[emu.id] ? "[FOUND]" : "[NOT FOUND]"}
+              {emulatorPaths[emu.id] ? "[found]" : "[not found]"}
             </span>
           </div>
         ))}

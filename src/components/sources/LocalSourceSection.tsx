@@ -73,7 +73,7 @@ export default function LocalSourceSection({ onReload }: Props) {
   return (
     <div className="card mt-3xl">
       <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-        // Local Folder
+        // Local folder
       </h2>
       <p className="text-text-secondary text-body mb-xl">
         Scan a folder on your computer or mounted SD card for ROMs.

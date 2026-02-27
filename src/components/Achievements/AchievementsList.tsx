@@ -17,12 +17,12 @@ export default function AchievementsList({
   return (
     <div className="flex flex-col gap-xl">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-          // ACHIEVEMENTS
+        <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+          // Achievements
         </span>
         {achievements && (
-          <span className="font-mono text-label text-text-secondary">
-            {achievements.num_earned} / {achievements.num_achievements} UNLOCKED
+          <span className="font-mono text-label text-text-secondary uppercase">
+            {achievements.num_earned} / {achievements.num_achievements} unlocked
           </span>
         )}
       </div>

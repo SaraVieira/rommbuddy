@@ -145,7 +145,7 @@ export default function DatFilesTab() {
     <>
       <section>
         <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-          // DAT File Management
+          // Dat File Management
         </h2>
         <div className="card">
           <p className="text-body text-text-muted mb-lg">
@@ -200,10 +200,10 @@ export default function DatFilesTab() {
                     </td>
                     <td className="p-md px-lg border-b border-border text-right">
                       <button
-                        className="text-error font-mono text-badge hover:underline cursor-pointer bg-transparent border-none"
+                        className="text-error font-mono text-badge hover:underline cursor-pointer bg-transparent border-none uppercase"
                         onClick={() => handleRemoveDat(dat.id)}
                       >
-                        REMOVE
+                        Remove
                       </button>
                     </td>
                   </tr>
@@ -216,7 +216,7 @@ export default function DatFilesTab() {
 
       <section className="mt-3xl">
         <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-          // Verify Library
+          // Verify library
         </h2>
         <div className="card">
           <p className="text-body text-text-muted mb-lg">

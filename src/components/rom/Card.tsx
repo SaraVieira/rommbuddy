@@ -33,7 +33,7 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
           <Gamepad2 size={40} className="text-text-dim" />
         )}
         <span className="absolute top-md left-md bg-accent text-text-on-accent font-mono text-badge font-bold uppercase tracking-wide px-sm py-xs">
-          {rom.platform_slug.toUpperCase()}
+          {rom.platform_slug}
         </span>
         <span className="absolute top-md right-md">
           <FavoriteButton

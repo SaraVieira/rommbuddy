@@ -23,7 +23,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
 
   const externalLinks = [
     rom.wikipedia_url && {
-      label: "WIKIPEDIA",
+      label: "Wikipedia",
       url: rom.wikipedia_url,
       icon: BookOpen,
     },
@@ -33,12 +33,12 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       icon: Gamepad2,
     },
     rom.retroachievements_game_id && {
-      label: "RETROACHIEVEMENTS",
+      label: "RetroAchievements",
       url: `https://retroachievements.org/game/${rom.retroachievements_game_id}`,
       icon: Trophy,
     },
     rom.thegamesdb_game_id && {
-      label: "THEGAMESDB",
+      label: "TheGamesDB",
       url: `https://thegamesdb.net/game.php?id=${rom.thegamesdb_game_id}`,
       icon: Database,
     },
@@ -47,32 +47,32 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
     <>
       <div className="flex bg-bg-card border border-border">
         <div className="flex-1 p-xl flex flex-col gap-sm">
-          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-            RELEASE
+          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+            Release
           </span>
           <span className="font-mono text-body font-medium text-text-primary">
             {releaseDate}
           </span>
         </div>
         <div className="flex-1 p-xl flex flex-col gap-sm border-l border-border">
-          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-            RATING
+          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+            Rating
           </span>
           <span className="font-mono text-body font-semibold text-accent">
             {rom.rating != null ? `${(rom.rating / 10).toFixed(1)} / 10` : "—"}
           </span>
         </div>
         <div className="flex-1 p-xl flex flex-col gap-sm border-l border-border">
-          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-            FILE SIZE
+          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+            File Size
           </span>
           <span className="font-mono text-body font-medium text-text-primary">
             {fileSizeMB}
           </span>
         </div>
         <div className="flex-1 p-xl flex flex-col gap-sm border-l border-border">
-          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-            SOURCE
+          <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+            Source
           </span>
           <span className="font-mono text-body font-medium text-accent">
             #{rom.source_id}
@@ -83,8 +83,8 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* Description */}
       {rom.description && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-            // DESCRIPTION
+          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+            // Description
           </span>
           <p className="font-mono text-nav text-text-secondary leading-[1.6] m-0">
             {rom.description}
@@ -95,24 +95,24 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* Genres & Themes */}
       {(rom.genres.length > 0 || rom.themes.length > 0) && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-            // GENRES & THEMES
+          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+            // Genres & Themes
           </span>
           <div className="flex flex-wrap gap-md">
             {rom.genres.map((g) => (
               <span
                 key={`genre-${g}`}
-                className="font-mono text-badge font-semibold text-accent tracking-[0.5px] px-lg py-1.25 bg-accent-tint-10 border border-accent-tint-40"
+                className="font-mono text-badge font-semibold text-accent tracking-[0.5px] px-lg py-1.25 bg-accent-tint-10 border border-accent-tint-40 uppercase"
               >
-                {g.toUpperCase()}
+                {g}
               </span>
             ))}
             {rom.themes.map((t) => (
               <span
                 key={`theme-${t}`}
-                className="font-mono text-badge font-medium text-text-secondary tracking-[0.5px] px-lg py-1.25 border border-border"
+                className="font-mono text-badge font-medium text-text-secondary tracking-[0.5px] px-lg py-1.25 border border-border uppercase"
               >
-                {t.toUpperCase()}
+                {t}
               </span>
             ))}
           </div>
@@ -124,8 +124,8 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
         <div className="flex gap-3xl">
           {rom.developer && (
             <div className="flex flex-col gap-sm">
-              <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-                DEVELOPER
+              <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+                Developer
               </span>
               <span className="font-mono text-nav font-medium text-text-primary">
                 {rom.developer}
@@ -134,8 +134,8 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
           )}
           {rom.publisher && (
             <div className="flex flex-col gap-sm">
-              <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px]">
-                PUBLISHER
+              <span className="font-mono text-badge font-semibold text-text-muted tracking-[0.5px] uppercase">
+                Publisher
               </span>
               <span className="font-mono text-nav font-medium text-text-primary">
                 {rom.publisher}
@@ -148,8 +148,8 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* External Links */}
       {externalLinks.length > 0 && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-            // EXTERNAL LINKS
+          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+            // External Links
           </span>
           <div className="flex flex-wrap gap-lg">
             {externalLinks.map((link) => (
@@ -161,7 +161,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
                 className="flex items-center gap-md bg-bg-elevated border border-border px-xl py-md no-underline hover:border-border-light transition-colors"
               >
                 <link.icon size={14} className="text-text-secondary" />
-                <span className="font-mono text-badge font-semibold text-text-primary tracking-[0.5px]">
+                <span className="font-mono text-badge font-semibold text-text-primary tracking-[0.5px] uppercase">
                   {link.label}
                 </span>
                 <ExternalLink size={10} className="text-text-muted" />

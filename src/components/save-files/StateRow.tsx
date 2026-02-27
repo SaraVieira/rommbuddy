@@ -30,8 +30,8 @@ export default function SaveStateRow({
         {save.file_name}
       </span>
       {save.slot != null && (
-        <span className="font-mono text-[9px] font-semibold text-accent bg-accent/15 border border-accent/30 px-md py-xs shrink-0">
-          SLOT {save.slot}
+        <span className="font-mono text-[9px] font-semibold text-accent bg-accent/15 border border-accent/30 px-md py-xs shrink-0 uppercase">
+          Slot {save.slot}
         </span>
       )}
       <span className="font-mono text-[10px] text-text-muted ml-auto shrink-0">

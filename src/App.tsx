@@ -93,8 +93,8 @@ export default function App() {
             <div className="w-[--height-logo-mark] h-logo-mark bg-accent flex items-center justify-center font-mono text-logo font-bold text-text-on-accent shrink-0">
               [R]
             </div>
-            <span className="font-mono text-logo font-semibold text-text-primary tracking-[1px]">
-              ROMM BUDDY
+            <span className="font-mono text-logo font-semibold text-text-primary tracking-[1px] uppercase">
+              Romm Buddy
             </span>
           </div>
           <ul className="list-none p-md flex flex-col gap-xs flex-1">
@@ -140,7 +140,7 @@ export default function App() {
           </ul>
           <div className="border-t border-border p-xl font-mono">
             <div className="text-label text-text-muted uppercase tracking-[1px] mb-lg">
-              // COLLECTION
+              // Collection
             </div>
             <div className="flex justify-between text-nav text-text-secondary py-sm">
               <span>Favorites</span>
@@ -158,8 +158,8 @@ export default function App() {
               <span>Sources</span>
               <span className="text-text-primary font-semibold">{sourceCount}</span>
             </div>
-            <div className="mt-lg text-badge text-accent font-semibold tracking-[1px]">
-              [SYNCED]
+            <div className="mt-lg text-badge text-accent font-semibold tracking-[1px] uppercase">
+              [synced]
             </div>
           </div>
         </nav>

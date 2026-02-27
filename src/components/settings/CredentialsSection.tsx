@@ -145,11 +145,11 @@ export default function CredentialsSection({
             </button>
             {status !== "unchecked" && status !== "testing" && (
               <span
-                className={`text-body font-mono font-semibold ${
+                className={`text-body font-mono font-semibold uppercase ${
                   status === "ok" ? "text-accent" : "text-error"
                 }`}
               >
-                [{status === "ok" ? "OK" : "ERROR"}] {statusMessage}
+                [{status === "ok" ? "ok" : "error"}] {statusMessage}
               </span>
             )}
           </div>

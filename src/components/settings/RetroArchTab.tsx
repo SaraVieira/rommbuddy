@@ -155,11 +155,11 @@ export default function RetroArchTab() {
               <span
                 className={
                   pathValid
-                    ? "text-accent font-mono font-semibold"
-                    : "text-error font-mono font-semibold"
+                    ? "text-accent font-mono font-semibold uppercase"
+                    : "text-error font-mono font-semibold uppercase"
                 }
               >
-                {pathValid ? "[FOUND]" : "[NOT FOUND]"}
+                {pathValid ? "[found]" : "[not found]"}
               </span>
             )}
           </div>

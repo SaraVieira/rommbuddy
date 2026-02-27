@@ -32,8 +32,8 @@ export default function PlatformFilter({
 
   const selectedPlatform = platforms.find((p) => p.id === selected);
   const label = selectedPlatform
-    ? `${selectedPlatform.name.toUpperCase()} (${selectedPlatform.rom_count})`
-    : `ALL PLATFORMS (${total})`;
+    ? `${selectedPlatform.name} (${selectedPlatform.rom_count})`
+    : `All Platforms (${total})`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -69,7 +69,7 @@ export default function PlatformFilter({
                 }}
                 className="font-mono text-body uppercase tracking-wide rounded-none cursor-pointer data-[selected=true]:bg-accent-tint-10 data-[selected=true]:text-text-primary"
               >
-                ALL PLATFORMS ({total})
+                All Platforms ({total})
                 <Check
                   size={14}
                   className={cn(
@@ -89,7 +89,7 @@ export default function PlatformFilter({
                   className="font-mono text-body uppercase tracking-wide rounded-none cursor-pointer data-[selected=true]:bg-accent-tint-10 data-[selected=true]:text-text-primary"
                 >
                   <span className="truncate">
-                    {p.name.toUpperCase()} ({p.rom_count})
+                    {p.name} ({p.rom_count})
                   </span>
                   <Check
                     size={14}

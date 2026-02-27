@@ -74,7 +74,7 @@ export default function RommSourceSection({ onReload }: Props) {
   return (
     <div className="card mt-3xl">
       <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-        // ROMM Server
+        // Romm Server
       </h2>
       <p className="text-text-secondary text-body mb-xl">
         Connect to a ROMM server to sync its ROM catalog.

@@ -8,10 +8,10 @@ const TABS = ["retroarch", "emulators", "integrations", "dat"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
-  retroarch: "RETROARCH",
-  emulators: "EMULATORS",
-  integrations: "INTEGRATIONS",
-  dat: "DAT FILES",
+  retroarch: "RetroArch",
+  emulators: "Emulators",
+  integrations: "Integrations",
+  dat: "Dat Files",
 };
 
 export default function Settings() {

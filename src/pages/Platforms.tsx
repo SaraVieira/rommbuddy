@@ -87,8 +87,8 @@ export default function Platforms() {
                       className="w-[40px] h-[40px] object-contain [image-rendering:pixelated]"
                     />
                   ) : (
-                    <span className="text-subtitle font-bold text-accent tracking-[1px]">
-                      {platform.slug.substring(0, 2).toUpperCase()}
+                    <span className="text-subtitle font-bold text-accent tracking-[1px] uppercase">
+                      {platform.slug.substring(0, 2)}
                     </span>
                   )}
                 </div>

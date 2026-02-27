@@ -66,7 +66,7 @@ export default function SaveDirectories({
   return (
     <div className="mt-3xl">
       <h2 className="font-mono text-[13px] font-semibold text-accent uppercase tracking-wide mb-lg">
-        // SAVE DIRECTORIES
+        // Save Directories
       </h2>
       <div className="bg-bg-card border border-border p-3xl flex flex-col gap-xl">
         <p className="font-mono text-[12px] text-text-muted leading-[1.6]">
@@ -89,19 +89,19 @@ export default function SaveDirectories({
                 </span>
                 {hasCustom ? (
                   <div className="flex items-center gap-md">
-                    <span className="font-mono text-[10px] font-semibold text-accent">
-                      [CUSTOM]
+                    <span className="font-mono text-[10px] font-semibold text-accent uppercase">
+                      [custom]
                     </span>
                     <button
                       className="btn btn-sm btn-secondary"
                       onClick={() => handleReset(emuId)}
                     >
-                      RESET
+                      Reset
                     </button>
                   </div>
                 ) : (
-                  <span className="font-mono text-[10px] font-semibold text-text-muted">
-                    [USING DEFAULTS]
+                  <span className="font-mono text-[10px] font-semibold text-text-muted uppercase">
+                    [using defaults]
                   </span>
                 )}
               </div>
@@ -109,7 +109,7 @@ export default function SaveDirectories({
               {(["save_dir", "state_dir"] as const).map((dirType) => (
                 <div key={dirType} className="flex flex-col gap-sm">
                   <span className="font-mono text-[10px] font-semibold text-text-muted uppercase">
-                    {dirType === "save_dir" ? "SAVES" : "STATES"}
+                    {dirType === "save_dir" ? "Saves" : "States"}
                   </span>
                   <div className="flex gap-md">
                     <input
@@ -123,7 +123,7 @@ export default function SaveDirectories({
                       className="btn btn-secondary btn-sm"
                       onClick={() => handleBrowse(emuId, dirType)}
                     >
-                      BROWSE
+                      Browse
                     </button>
                   </div>
                 </div>

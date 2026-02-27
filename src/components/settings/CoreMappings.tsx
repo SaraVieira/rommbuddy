@@ -164,12 +164,12 @@ export default function CoreMappings({
                   </td>
                   <td className="p-md px-lg text-body text-text-primary border-b border-border align-middle">
                     {mapping ? (
-                      <span className="text-accent font-mono font-semibold">
-                        [OK]
+                      <span className="text-accent font-mono font-semibold uppercase">
+                        [ok]
                       </span>
                     ) : (
-                      <span className="text-error font-mono font-semibold">
-                        [MISSING]
+                      <span className="text-error font-mono font-semibold uppercase">
+                        [missing]
                       </span>
                     )}
                   </td>

@@ -94,8 +94,8 @@ export function SaveFiles({
   if (loading) {
     return (
       <div className="flex flex-col gap-lg">
-        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px]">
-          // SAVES
+        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
+          // Saves
         </span>
         <span className="font-mono text-[10px] text-text-muted">
           Scanning...
@@ -108,19 +108,19 @@ export function SaveFiles({
     return (
       <div className="flex flex-col gap-lg">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px]">
-            // SAVES
+          <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
+            // Saves
           </span>
           <button
             onClick={handleImport}
-            className="flex items-center gap-xs font-mono text-[10px] font-semibold text-text-secondary hover:text-text-primary"
+            className="flex items-center gap-xs font-mono text-[10px] font-semibold text-text-secondary hover:text-text-primary uppercase"
           >
             <Upload size={10} />
-            IMPORT
+            Import
           </button>
         </div>
-        <span className="font-mono text-[10px] text-text-muted">
-          NO SAVES FOUND
+        <span className="font-mono text-[10px] text-text-muted uppercase">
+          No saves found
         </span>
       </div>
     );
@@ -132,27 +132,27 @@ export function SaveFiles({
   return (
     <div className="flex flex-col gap-lg">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px]">
-          // SAVES
+        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
+          // Saves
         </span>
         <div className="flex items-center gap-lg">
-          <span className="font-mono text-[10px] text-text-muted">
-            {saves.length} {saves.length === 1 ? "FILE" : "FILES"}
+          <span className="font-mono text-[10px] text-text-muted uppercase">
+            {saves.length} {saves.length === 1 ? "file" : "files"}
           </span>
           <button
             onClick={handleImport}
-            className="flex items-center gap-xs font-mono text-[10px] font-semibold text-text-secondary hover:text-text-primary"
+            className="flex items-center gap-xs font-mono text-[10px] font-semibold text-text-secondary hover:text-text-primary uppercase"
           >
             <Upload size={10} />
-            IMPORT
+            Import
           </button>
         </div>
       </div>
 
       {saveFiles.length > 0 && (
         <div className="flex flex-col gap-md">
-          <span className="font-mono text-[10px] font-semibold text-text-muted">
-            SAVE FILES
+          <span className="font-mono text-[10px] font-semibold text-text-muted uppercase">
+            Save Files
           </span>
           <div className="flex flex-col gap-xs">
             {saveFiles.map((sf) => (
@@ -169,8 +169,8 @@ export function SaveFiles({
 
       {saveStates.length > 0 && (
         <div className="flex flex-col gap-md">
-          <span className="font-mono text-[10px] font-semibold text-text-muted">
-            SAVE STATES
+          <span className="font-mono text-[10px] font-semibold text-text-muted uppercase">
+            Save States
           </span>
           <div className="flex flex-col gap-xs">
             {saveStates.map((ss) => (

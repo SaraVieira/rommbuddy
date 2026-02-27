@@ -27,8 +27,8 @@ export const Sources = ({ rom }: { rom: RomWithMeta }) => {
 
   return romSources.length > 1 ? (
     <div className="flex flex-col gap-lg">
-      <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-        // AVAILABLE FROM {romSources.length} SOURCES
+      <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+        // Available from {romSources.length} sources
       </span>
       <div className="flex flex-col gap-md">
         {romSources.map((src) => (

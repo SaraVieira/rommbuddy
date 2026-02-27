@@ -66,7 +66,7 @@ export default function RomDetailPage() {
           onClick={() => navigate("/")}
         >
           <ArrowLeft size={16} />
-          BACK TO LIBRARY
+          Back to Library
         </button>
         <div className="text-center py-7xl text-text-muted">
           {loadingRom ? "Loading..." : "ROM not found."}
@@ -101,7 +101,7 @@ export default function RomDetailPage() {
             onClick={() => navigate(-1)}
           >
             <ArrowLeft size={16} />
-            BACK TO LIBRARY
+            Back to Library
           </button>
 
           {downloading && downloadProgress ? (
@@ -120,7 +120,7 @@ export default function RomDetailPage() {
                 disabled={downloading}
               >
                 <Play size={16} />
-                LAUNCH
+                Launch
               </button>
               {!isLocal && (
                 <button
@@ -129,7 +129,7 @@ export default function RomDetailPage() {
                   disabled={downloading}
                 >
                   <Download size={16} />
-                  DOWNLOAD
+                  Download
                 </button>
               )}
             </div>
@@ -151,8 +151,8 @@ export default function RomDetailPage() {
             />
           </div>
           <div className="flex items-center gap-md flex-wrap">
-            <span className="bg-accent-tint-20 text-accent font-mono text-badge font-bold tracking-[0.5px] px-lg py-sm">
-              {rom.platform_slug.toUpperCase()}
+            <span className="bg-accent-tint-20 text-accent font-mono text-badge font-bold tracking-[0.5px] px-lg py-sm uppercase">
+              {rom.platform_slug}
             </span>
             {rom.regions.map((r) => (
               <span
@@ -193,7 +193,7 @@ export default function RomDetailPage() {
         <FileInfo rom={rom} />
 
         <button
-          className="flex items-center gap-md bg-bg-card border border-border px-xl py-lg font-mono text-label font-semibold text-text-primary cursor-pointer hover:border-border-light transition-colors self-start"
+          className="flex items-center gap-md bg-bg-card border border-border px-xl py-lg font-mono text-label font-semibold text-text-primary cursor-pointer hover:border-border-light transition-colors self-start uppercase"
           disabled={enriching}
           onClick={handleEnrich}
         >
@@ -201,7 +201,7 @@ export default function RomDetailPage() {
             size={14}
             className={`text-text-secondary ${enriching ? "animate-spin" : ""}`}
           />
-          {enriching ? "FETCHING..." : "REFETCH METADATA"}
+          {enriching ? "Fetching..." : "Refetch Metadata"}
         </button>
       </div>
     </div>

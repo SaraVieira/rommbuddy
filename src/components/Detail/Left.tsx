@@ -47,8 +47,8 @@ export const LeftPanel = ({ rom }: { rom: RomWithMeta }) => {
       {/* Screenshot Thumbnails */}
       {screenshotUrls.length > 0 && (
         <div className="p-[16px_24px] flex flex-col gap-md">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px]">
-            // SCREENSHOTS
+          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
+            // Screenshots
           </span>
           <div className="flex gap-md flex-wrap">
             {screenshotUrls.map((url, i) => (

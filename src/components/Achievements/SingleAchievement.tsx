@@ -51,9 +51,9 @@ export const SingleAchievement = ({
         </span>
       </div>
       <span
-        className={`font-mono text-tiny font-semibold tracking-[0.5px] shrink-0 ${achievement.earned ? "text-accent" : "text-text-dim"}`}
+        className={`font-mono text-tiny font-semibold tracking-[0.5px] shrink-0 uppercase ${achievement.earned ? "text-accent" : "text-text-dim"}`}
       >
-        {achievement.earned ? "EARNED" : "LOCKED"}
+        {achievement.earned ? "Earned" : "Locked"}
       </span>
     </div>
   );
