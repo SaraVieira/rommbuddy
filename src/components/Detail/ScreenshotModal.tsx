@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useProxiedImage } from "../hooks/useProxiedImage";
+import { useProxiedImage } from "../../hooks/useProxiedImage";
 
 interface Props {
   url: string;

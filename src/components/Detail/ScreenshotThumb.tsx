@@ -1,5 +1,5 @@
 import { Gamepad2 } from "lucide-react";
-import { useProxiedImage } from "../hooks/useProxiedImage";
+import { useProxiedImage } from "../../hooks/useProxiedImage";
 
 interface Props {
   url: string;
@@ -11,7 +11,7 @@ export default function ScreenshotThumb({ url, alt, onClick }: Props) {
   const src = useProxiedImage(url);
   return (
     <button
-      className="w-[120px] h-[90px] bg-bg-elevated border border-border p-0 cursor-pointer overflow-hidden hover:border-accent transition-colors shrink-0"
+      className="w-30 h-22.5 bg-bg-elevated border border-border p-0 cursor-pointer overflow-hidden hover:border-accent transition-colors shrink-0"
       onClick={onClick}
     >
       {src ? (

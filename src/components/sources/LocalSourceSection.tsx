@@ -1,34 +1,26 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type {
-  SourceConfig,
-  ConnectionTestResult,
-  ScanProgress,
-} from "../../types";
+import type { SourceConfig, ConnectionTestResult } from "../../types";
 import ProgressBar from "../ProgressBar";
+import { useAtomValue } from "jotai";
+import { localPathAtom, localSourceAtom } from "@/store/sources";
+import { useAppSync, useAppToast } from "@/App";
 
 interface Props {
-  source: SourceConfig | null;
-  initialPath: string;
-  syncing: boolean;
-  syncProgress: ScanProgress | null;
-  onStartSync: (sourceId: number) => Promise<void>;
-  onCancelSync: (sourceId: number) => Promise<void>;
   onReload: () => Promise<void>;
-  toast: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-export default function LocalSourceSection({
-  source,
-  initialPath,
-  syncing,
-  syncProgress,
-  onStartSync,
-  onCancelSync,
-  onReload,
-  toast,
-}: Props) {
+export default function LocalSourceSection({ onReload }: Props) {
+  const {
+    syncing,
+    progress: syncProgress,
+    startSync,
+    cancelSync,
+  } = useAppSync();
+  const toast = useAppToast();
+  const source = useAtomValue(localSourceAtom);
+  const initialPath = useAtomValue(localPathAtom);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(source?.name ?? "");
   const [path, setPath] = useState(initialPath);
@@ -95,7 +87,7 @@ export default function LocalSourceSection({
       await onReload();
       const sources: SourceConfig[] = await invoke("get_sources");
       const local = sources.find((s) => s.source_type === "local");
-      if (local) await onStartSync(local.id);
+      if (local) await startSync(local.id);
       await onReload();
     } catch (e) {
       toast(String(e), "error");
@@ -104,7 +96,7 @@ export default function LocalSourceSection({
 
   const handleSync = async () => {
     if (!source) return;
-    await onStartSync(source.id);
+    await startSync(source.id);
     await onReload();
   };
 
@@ -238,7 +230,7 @@ export default function LocalSourceSection({
           />
           <button
             className="btn btn-secondary btn-sm self-start"
-            onClick={() => source && onCancelSync(source.id)}
+            onClick={() => source && cancelSync(source.id)}
           >
             Cancel
           </button>

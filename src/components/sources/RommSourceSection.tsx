@@ -1,39 +1,34 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type {
-  SourceConfig,
-  ConnectionTestResult,
-  ScanProgress,
-} from "../../types";
+import type { SourceConfig, ConnectionTestResult } from "../../types";
 import ProgressBar from "../ProgressBar";
+import { useAtomValue } from "jotai";
+import {
+  rommNameAtom,
+  rommPasswordAtom,
+  rommSourceAtom,
+  rommUrlAtom,
+  rommUsernameAtom,
+} from "@/store/sources";
+import { useAppSync, useAppToast } from "@/App";
 
 interface Props {
-  source: SourceConfig | null;
-  initialName: string;
-  initialUrl: string;
-  initialUsername: string;
-  initialPassword: string;
-  syncing: boolean;
-  syncProgress: ScanProgress | null;
-  onStartSync: (sourceId: number) => Promise<void>;
-  onCancelSync: (sourceId: number) => Promise<void>;
   onReload: () => Promise<void>;
-  toast: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-export default function RommSourceSection({
-  source,
-  initialName,
-  initialUrl,
-  initialUsername,
-  initialPassword,
-  syncing,
-  syncProgress,
-  onStartSync,
-  onCancelSync,
-  onReload,
-  toast,
-}: Props) {
+export default function RommSourceSection({ onReload }: Props) {
+  const {
+    syncing,
+    progress: syncProgress,
+    startSync,
+    cancelSync,
+  } = useAppSync();
+  const toast = useAppToast();
+  const source = useAtomValue(rommSourceAtom);
+  const initialName = useAtomValue(rommNameAtom);
+  const initialUrl = useAtomValue(rommUrlAtom);
+  const initialUsername = useAtomValue(rommUsernameAtom);
+  const initialPassword = useAtomValue(rommPasswordAtom);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(initialName);
   const [url, setUrl] = useState(initialUrl);
@@ -91,7 +86,7 @@ export default function RommSourceSection({
       await onReload();
       const sources: SourceConfig[] = await invoke("get_sources");
       const romm = sources.find((s) => s.source_type === "romm");
-      if (romm) await onStartSync(romm.id);
+      if (romm) await startSync(romm.id);
       await onReload();
     } catch (e) {
       toast(String(e), "error");
@@ -100,7 +95,7 @@ export default function RommSourceSection({
 
   const handleSync = async () => {
     if (!source) return;
-    await onStartSync(source.id);
+    await startSync(source.id);
     await onReload();
   };
 
@@ -243,7 +238,7 @@ export default function RommSourceSection({
           />
           <button
             className="btn btn-secondary btn-sm self-start"
-            onClick={() => source && onCancelSync(source.id)}
+            onClick={() => source && cancelSync(source.id)}
           >
             Cancel
           </button>

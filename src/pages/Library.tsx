@@ -145,7 +145,7 @@ export default function Library() {
         <h1 className="font-display text-page-title font-bold text-text-primary mb-md uppercase">
           Library
         </h1>
-        <div className="text-center py-[60px] px-[20px] text-text-muted">
+        <div className="text-center py-15 px-[20px] text-text-muted">
           <p className="mb-xl text-[15px]">
             No ROMs yet. Add a source to get started.
           </p>
@@ -173,7 +173,7 @@ export default function Library() {
       <div className="flex items-center gap-md mb-3xl flex-wrap">
         <input
           type="text"
-          className="min-w-[160px] flex-1 max-w-[320px] px-lg py-[6px] rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
+          className="min-w-40 flex-1 max-w-80 px-lg py-1.5 rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
           placeholder="Search ROMs..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
