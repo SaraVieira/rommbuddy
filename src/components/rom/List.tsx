@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RomWithMeta } from "../types";
-import RomRow from "./RomRow";
+import type { RomWithMeta } from "../../types";
+import RomRow from "./Row";
 
 interface Props {
   roms: RomWithMeta[];
@@ -44,7 +44,11 @@ export default function RomList({ roms, onSelect, onToggleFavorite }: Props) {
             <tr>
               <td
                 colSpan={7}
-                style={{ height: virtualizer.getVirtualItems()[0].start, padding: 0, border: "none" }}
+                style={{
+                  height: virtualizer.getVirtualItems()[0].start,
+                  padding: 0,
+                  border: "none",
+                }}
               />
             </tr>
           )}
@@ -66,7 +70,9 @@ export default function RomList({ roms, onSelect, onToggleFavorite }: Props) {
                 style={{
                   height:
                     virtualizer.getTotalSize() -
-                    (virtualizer.getVirtualItems()[virtualizer.getVirtualItems().length - 1]?.end ?? 0),
+                    (virtualizer.getVirtualItems()[
+                      virtualizer.getVirtualItems().length - 1
+                    ]?.end ?? 0),
                   padding: 0,
                   border: "none",
                 }}

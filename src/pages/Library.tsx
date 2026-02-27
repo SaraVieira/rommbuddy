@@ -8,8 +8,8 @@ import type {
   ScanProgress,
   LibraryPage as LibraryPageType,
 } from "../types";
-import RomGrid from "../components/RomGrid";
-import RomList from "../components/RomList";
+import RomGrid from "../components/rom/Grid";
+import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
 import Pagination from "../components/Pagination";

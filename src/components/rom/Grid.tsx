@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RomWithMeta } from "../types";
-import RomCard from "./RomCard";
+import type { RomWithMeta } from "../../types";
+import RomCard from "./Card";
 
 interface Props {
   roms: RomWithMeta[];
@@ -22,7 +22,14 @@ interface VirtualGridProps {
   onToggleFavorite: (romId: number, favorite: boolean) => void;
 }
 
-function VirtualGrid({ roms, columns, rowHeight, scrollRef, onSelect, onToggleFavorite }: VirtualGridProps) {
+function VirtualGrid({
+  roms,
+  columns,
+  rowHeight,
+  scrollRef,
+  onSelect,
+  onToggleFavorite,
+}: VirtualGridProps) {
   const rowCount = Math.ceil(roms.length / columns);
 
   const virtualizer = useVirtualizer({
@@ -91,7 +98,10 @@ export default function RomGrid({ roms, onSelect, onToggleFavorite }: Props) {
     const el = scrollRef.current;
     if (!el) return;
     const width = el.clientWidth;
-    const cols = Math.max(1, Math.floor((width + GAP) / (CARD_MIN_WIDTH + GAP)));
+    const cols = Math.max(
+      1,
+      Math.floor((width + GAP) / (CARD_MIN_WIDTH + GAP)),
+    );
     setColumns(cols);
 
     const cardWidth = (width - GAP * (cols - 1)) / cols;
@@ -110,8 +120,9 @@ export default function RomGrid({ roms, onSelect, onToggleFavorite }: Props) {
 
   // Key that changes when the rom list changes, forcing virtualizer to fully remount
   const gridKey = useMemo(
-    () => `${roms.length}-${roms[0]?.id ?? 0}-${roms[roms.length - 1]?.id ?? 0}`,
-    [roms]
+    () =>
+      `${roms.length}-${roms[0]?.id ?? 0}-${roms[roms.length - 1]?.id ?? 0}`,
+    [roms],
   );
 
   return (

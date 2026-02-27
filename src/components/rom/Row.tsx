@@ -1,7 +1,7 @@
 import { CheckCircle, AlertTriangle } from "lucide-react";
-import type { RomWithMeta } from "../types";
-import { useProxiedImage } from "../hooks/useProxiedImage";
-import FavoriteButton from "./FavoriteButton";
+import type { RomWithMeta } from "../../types";
+import { useProxiedImage } from "../../hooks/useProxiedImage";
+import FavoriteButton from "../FavoriteButton";
 
 interface Props {
   rom: RomWithMeta;
@@ -25,11 +25,22 @@ export default function RomRow({ rom, onClick, onToggleFavorite }: Props) {
       onClick={onClick}
     >
       <td style={{ width: 32 }}>
-        <FavoriteButton romId={rom.id} favorite={rom.favorite} onToggle={onToggleFavorite} size={14} />
+        <FavoriteButton
+          romId={rom.id}
+          favorite={rom.favorite}
+          onToggle={onToggleFavorite}
+          size={14}
+        />
       </td>
       <td>
         {coverSrc ? (
-          <img src={coverSrc} alt="" width={32} height={42} className="rounded-none object-cover block" />
+          <img
+            src={coverSrc}
+            alt=""
+            width={32}
+            height={42}
+            className="rounded-none object-cover block"
+          />
         ) : (
           <div className="w-8 h-[42px] bg-bg-elevated rounded-none flex items-center justify-center text-sm text-text-dim font-bold">
             {rom.name.charAt(0)}
@@ -41,13 +52,19 @@ export default function RomRow({ rom, onClick, onToggleFavorite }: Props) {
       <td className="!text-text-muted !text-nav">
         {rom.regions.length > 0 ? rom.regions.join(", ") : "\u2014"}
       </td>
-      <td className="!text-text-muted !text-nav">{formatSize(rom.file_size)}</td>
+      <td className="!text-text-muted !text-nav">
+        {formatSize(rom.file_size)}
+      </td>
       <td style={{ width: 28 }}>
         {rom.verification_status === "verified" && (
-          <span title="Verified"><CheckCircle size={14} className="text-accent" /></span>
+          <span title="Verified">
+            <CheckCircle size={14} className="text-accent" />
+          </span>
         )}
         {rom.verification_status === "bad_dump" && (
-          <span title="Bad dump"><AlertTriangle size={14} className="text-error" /></span>
+          <span title="Bad dump">
+            <AlertTriangle size={14} className="text-error" />
+          </span>
         )}
       </td>
     </tr>

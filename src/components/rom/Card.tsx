@@ -1,9 +1,9 @@
 import { CheckCircle, AlertTriangle, Gamepad2, Save } from "lucide-react";
 import { useAtomValue } from "jotai";
-import type { RomWithMeta } from "../types";
-import { useProxiedImage } from "../hooks/useProxiedImage";
-import FavoriteButton from "./FavoriteButton";
-import { romSavesAtom } from "../store/library";
+import type { RomWithMeta } from "../../types";
+import { useProxiedImage } from "../../hooks/useProxiedImage";
+import FavoriteButton from "../FavoriteButton";
+import { romSavesAtom } from "../../store/library";
 
 interface Props {
   rom: RomWithMeta;
@@ -23,7 +23,12 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
     >
       <div className="aspect-[3/4] bg-bg-elevated flex items-center justify-center overflow-hidden relative">
         {coverSrc ? (
-          <img src={coverSrc} alt={rom.name} loading="lazy" className="w-full h-full object-cover" />
+          <img
+            src={coverSrc}
+            alt={rom.name}
+            loading="lazy"
+            className="w-full h-full object-cover"
+          />
         ) : (
           <Gamepad2 size={40} className="text-text-dim" />
         )}
@@ -31,10 +36,17 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
           {rom.platform_slug.toUpperCase()}
         </span>
         <span className="absolute top-md right-md">
-          <FavoriteButton romId={rom.id} favorite={rom.favorite} onToggle={onToggleFavorite} />
+          <FavoriteButton
+            romId={rom.id}
+            favorite={rom.favorite}
+            onToggle={onToggleFavorite}
+          />
         </span>
         {rom.verification_status === "verified" && (
-          <span className="absolute bottom-md left-md" title="Verified (DAT match)">
+          <span
+            className="absolute bottom-md left-md"
+            title="Verified (DAT match)"
+          >
             <CheckCircle size={16} className="text-accent" />
           </span>
         )}
@@ -50,7 +62,10 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
         )}
       </div>
       <div className="p-lg">
-        <div className="text-body font-medium text-text-primary overflow-hidden text-ellipsis whitespace-nowrap" title={rom.name}>
+        <div
+          className="text-body font-medium text-text-primary overflow-hidden text-ellipsis whitespace-nowrap"
+          title={rom.name}
+        >
           {rom.name}
         </div>
         <div className="flex items-center justify-between mt-xs">
@@ -58,9 +73,7 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
             {rom.platform_name}
           </span>
           {rom.regions.length > 0 && (
-            <span className="text-badge text-text-dim">
-              {rom.regions[0]}
-            </span>
+            <span className="text-badge text-text-dim">{rom.regions[0]}</span>
           )}
         </div>
       </div>

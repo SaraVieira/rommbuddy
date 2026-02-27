@@ -1,19 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import type {
-  RomWithMeta,
-  PlatformWithCount,
-  LibraryPage,
-} from "../types";
-import RomGrid from "../components/RomGrid";
-import RomList from "../components/RomList";
+import type { RomWithMeta, PlatformWithCount, LibraryPage } from "../types";
+import RomGrid from "../components/rom/Grid";
+import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
 import Pagination from "../components/Pagination";
 import { useAppToast } from "../App";
-
-
 
 const PAGE_SIZE = 50;
 
@@ -49,7 +43,9 @@ export default function Search() {
 
   // Load platforms
   useEffect(() => {
-    invoke<PlatformWithCount[]>("get_platforms_with_counts").then(setPlatforms).catch(console.error);
+    invoke<PlatformWithCount[]>("get_platforms_with_counts")
+      .then(setPlatforms)
+      .catch(console.error);
   }, []);
 
   const doSearch = useCallback(async () => {
@@ -88,8 +84,12 @@ export default function Search() {
   return (
     <div className="page">
       <div className="flex flex-col gap-xs mb-xl">
-        <h1 className="font-display text-page-title font-bold text-text-primary uppercase">Search</h1>
-        <span className="text-nav text-text-muted">Search across all platforms</span>
+        <h1 className="font-display text-page-title font-bold text-text-primary uppercase">
+          Search
+        </h1>
+        <span className="text-nav text-text-muted">
+          Search across all platforms
+        </span>
       </div>
       <div className="flex items-center gap-md mb-3xl">
         <input
@@ -113,21 +113,45 @@ export default function Search() {
 
       {searched && !loading && roms.length > 0 && (
         <div className="text-nav text-text-muted mb-lg">
-          Found {total} result{total !== 1 ? "s" : ""}{debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}
+          Found {total} result{total !== 1 ? "s" : ""}
+          {debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}
         </div>
       )}
 
       <div className="mt-xl">
         {!searched ? (
-          <div className="text-center py-[60px] px-[20px] text-text-dim text-[15px]">Search by name or select a platform.</div>
+          <div className="text-center py-[60px] px-[20px] text-text-dim text-[15px]">
+            Search by name or select a platform.
+          </div>
         ) : loading ? (
-          <div className="text-center p-[40px] text-text-muted">Searching...</div>
+          <div className="text-center p-[40px] text-text-muted">
+            Searching...
+          </div>
         ) : roms.length === 0 ? (
-          <div className="text-center p-[40px] text-text-muted">No results{debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}</div>
+          <div className="text-center p-[40px] text-text-muted">
+            No results
+            {debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}
+          </div>
         ) : view === "grid" ? (
-          <RomGrid roms={roms} onSelect={handleSelectRom} onToggleFavorite={(romId, fav) => setRoms(prev => prev.map(r => r.id === romId ? { ...r, favorite: fav } : r))} />
+          <RomGrid
+            roms={roms}
+            onSelect={handleSelectRom}
+            onToggleFavorite={(romId, fav) =>
+              setRoms((prev) =>
+                prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
+              )
+            }
+          />
         ) : (
-          <RomList roms={roms} onSelect={handleSelectRom} onToggleFavorite={(romId, fav) => setRoms(prev => prev.map(r => r.id === romId ? { ...r, favorite: fav } : r))} />
+          <RomList
+            roms={roms}
+            onSelect={handleSelectRom}
+            onToggleFavorite={(romId, fav) =>
+              setRoms((prev) =>
+                prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
+              )
+            }
+          />
         )}
       </div>
 

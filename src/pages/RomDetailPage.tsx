@@ -1,21 +1,18 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Play, Download, RefreshCw } from "lucide-react";
-import type {
-  RomWithMeta,
-  DownloadProgress,
-  AchievementData,
-  RaCredentials,
-} from "../types";
+import type { RomWithMeta } from "../types";
 import { useAppToast } from "../App";
 import ProgressBar from "../components/ProgressBar";
 import FavoriteButton from "../components/FavoriteButton";
-import AchievementsList from "../components/Achievements/AchievementsList";
-import { SaveFiles } from "../components/SaveFiles";
-import { MetadataGrid } from "@/components/Detail/Metadata";
-import { FileInfo } from "@/components/Detail/FileInfo";
-import { LeftPanel } from "@/components/Detail/Left";
+import AchievementsList from "../components/achievements/AchievementsList";
+import { SaveFiles } from "../components/save-files";
+import { MetadataGrid } from "@/components/detail/Metadata";
+import { FileInfo } from "@/components/detail/FileInfo";
+import { LeftPanel } from "@/components/detail/Left";
+import { useLaunchRom } from "../hooks/useLaunchRom";
+import { useAchievements } from "../hooks/useAchievements";
 
 export default function RomDetailPage() {
   const location = useLocation();
@@ -26,8 +23,8 @@ export default function RomDetailPage() {
 
   const [rom, setRom] = useState<RomWithMeta | undefined>(initialRom);
   const [loadingRom, setLoadingRom] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
-  // Fetch ROM by ID if not passed via route state
   useEffect(() => {
     if (initialRom || !id) return;
     let cancelled = false;
@@ -39,7 +36,7 @@ export default function RomDetailPage() {
         });
         if (!cancelled) setRom(fetched);
       } catch {
-        // ROM not found — will show fallback
+        // ROM not found
       } finally {
         if (!cancelled) setLoadingRom(false);
       }
@@ -48,56 +45,18 @@ export default function RomDetailPage() {
       cancelled = true;
     };
   }, [id, initialRom]);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] =
-    useState<DownloadProgress | null>(null);
-  const [enriching, setEnriching] = useState(false);
+
+  const { downloading, downloadProgress, launch } = useLaunchRom(
+    rom?.id ?? 0,
+    rom?.source_id ?? 0,
+  );
+  const {
+    achievements,
+    loading: achievementsLoading,
+    error: achievementsError,
+  } = useAchievements(rom?.id);
 
   const isLocal = rom?.source_type === "local";
-
-  // Achievements
-  const [achievements, setAchievements] = useState<AchievementData | null>(
-    null,
-  );
-  const [achievementsLoading, setAchievementsLoading] = useState(false);
-  const [achievementsError, setAchievementsError] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!rom) return;
-
-    let cancelled = false;
-    setAchievementsLoading(true);
-    setAchievementsError(null);
-
-    (async () => {
-      try {
-        const creds = await invoke<RaCredentials | null>("get_ra_credentials");
-        if (!creds || cancelled) {
-          setAchievementsLoading(false);
-          return;
-        }
-        const data = await invoke<AchievementData>("get_achievements", {
-          romId: rom.id,
-        });
-        if (!cancelled) setAchievements(data);
-      } catch (e) {
-        if (!cancelled) {
-          const msg = String(e);
-          if (!msg.includes("No RetroAchievements game found")) {
-            setAchievementsError(msg);
-          }
-        }
-      } finally {
-        if (!cancelled) setAchievementsLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [rom?.id]);
 
   if (!rom) {
     return (
@@ -116,45 +75,18 @@ export default function RomDetailPage() {
     );
   }
 
-  const handlePlay = async () => {
-    setDownloading(true);
-    setDownloadProgress(null);
+  const handleEnrich = async () => {
+    setEnriching(true);
     try {
-      const channel = new Channel<DownloadProgress>();
-      channel.onmessage = (progress) => setDownloadProgress(progress);
-      await invoke("download_and_launch", {
+      const updated = await invoke<RomWithMeta>("enrich_single_rom", {
         romId: rom.id,
-        sourceId: rom.source_id,
-        channel,
       });
-      toast("Game launched!", "success");
+      setRom(updated);
+      toast("Metadata refreshed", "success");
     } catch (e) {
       toast(String(e), "error");
     } finally {
-      setDownloading(false);
-      setDownloadProgress(null);
-    }
-  };
-
-  const handlePlayFromSave = async (slot: number | null, filePath: string) => {
-    setDownloading(true);
-    setDownloadProgress(null);
-    try {
-      const channel = new Channel<DownloadProgress>();
-      channel.onmessage = (progress) => setDownloadProgress(progress);
-      await invoke("download_and_launch", {
-        romId: rom.id,
-        sourceId: rom.source_id,
-        channel,
-        saveStateSlot: slot,
-        saveStatePath: filePath,
-      });
-      toast("Game launched from save state!", "success");
-    } catch (e) {
-      toast(String(e), "error");
-    } finally {
-      setDownloading(false);
-      setDownloadProgress(null);
+      setEnriching(false);
     }
   };
 
@@ -162,7 +94,6 @@ export default function RomDetailPage() {
     <div className="flex h-full">
       <LeftPanel rom={rom} />
 
-      {/* Right Panel — Details (scrollable) */}
       <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-3xl p-[32px_40px]">
         <div className="flex items-center justify-between">
           <button
@@ -185,7 +116,7 @@ export default function RomDetailPage() {
             <div className="flex gap-md shrink-0">
               <button
                 className="btn btn-primary flex items-center gap-lg"
-                onClick={handlePlay}
+                onClick={() => launch()}
                 disabled={downloading}
               >
                 <Play size={16} />
@@ -194,7 +125,7 @@ export default function RomDetailPage() {
               {!isLocal && (
                 <button
                   className="btn btn-secondary flex items-center gap-lg"
-                  onClick={handlePlay}
+                  onClick={() => launch()}
                   disabled={downloading}
                 >
                   <Download size={16} />
@@ -250,42 +181,21 @@ export default function RomDetailPage() {
         </div>
 
         <MetadataGrid rom={rom} />
-
-        {/* Achievements */}
         <AchievementsList
           achievements={achievements}
           loading={achievementsLoading}
           error={achievementsError}
         />
-
-        {/* Save Files */}
-        {rom && (
-          <SaveFiles romId={rom.id} onLaunchSaveState={handlePlayFromSave} />
-        )}
-
+        <SaveFiles
+          romId={rom.id}
+          onLaunchSaveState={(slot, path) => launch(slot, path)}
+        />
         <FileInfo rom={rom} />
 
-        {/* Sources */}
-
-        {/* Refetch Metadata */}
         <button
           className="flex items-center gap-md bg-bg-card border border-border px-xl py-lg font-mono text-label font-semibold text-text-primary cursor-pointer hover:border-border-light transition-colors self-start"
           disabled={enriching}
-          onClick={async () => {
-            if (!rom) return;
-            setEnriching(true);
-            try {
-              const updated = await invoke<RomWithMeta>("enrich_single_rom", {
-                romId: rom.id,
-              });
-              setRom(updated);
-              toast("Metadata refreshed", "success");
-            } catch (e) {
-              toast(String(e), "error");
-            } finally {
-              setEnriching(false);
-            }
-          }}
+          onClick={handleEnrich}
         >
           <RefreshCw
             size={14}
