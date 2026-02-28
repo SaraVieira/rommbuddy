@@ -4,9 +4,13 @@ use std::sync::LazyLock;
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
-use sqlx::SqlitePool;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter, Statement,
+};
 use tokio_util::sync::CancellationToken;
 
+use crate::entity::{dat_entries, dat_files, roms};
 use crate::error::{AppError, AppResult};
 use crate::hash;
 use crate::models::ScanProgress;
@@ -85,7 +89,7 @@ pub struct ParsedDat {
 }
 
 /// Info about an imported DAT file (returned to frontend).
-#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, serde::Serialize)]
 pub struct DatFileInfo {
     pub id: i64,
     pub name: String,
@@ -248,7 +252,7 @@ pub fn parse_dat_file(path: &Path) -> AppResult<ParsedDat> {
 
 /// Import a DAT file into the database. Returns the dat_file id.
 pub async fn import_dat_file(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     path: &Path,
     dat_type: &str,
     platform_slug: &str,
@@ -272,30 +276,28 @@ pub async fn import_dat_file(
     });
 
     // Remove any existing DAT for this platform + type
-    sqlx::query(
-        "DELETE FROM dat_files WHERE platform_slug = ? AND dat_type = ?",
-    )
-    .bind(&platform_slug)
-    .bind(&dat_type)
-    .execute(pool)
-    .await?;
+    dat_files::Entity::delete_many()
+        .filter(dat_files::Column::PlatformSlug.eq(&platform_slug))
+        .filter(dat_files::Column::DatType.eq(&dat_type))
+        .exec(db)
+        .await?;
 
     // Insert dat_file record
     #[allow(clippy::cast_possible_wrap)]
     let entry_count = parsed.entries.len() as i64;
-    let dat_file_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO dat_files (name, description, version, dat_type, platform_slug, entry_count)
-         VALUES (?, ?, ?, ?, ?, ?)
-         RETURNING id",
-    )
-    .bind(&parsed.header.name)
-    .bind(&parsed.header.description)
-    .bind(&parsed.header.version)
-    .bind(&dat_type)
-    .bind(&platform_slug)
-    .bind(entry_count)
-    .fetch_one(pool)
+    let result = dat_files::ActiveModel {
+        id: sea_orm::ActiveValue::NotSet,
+        name: Set(parsed.header.name.clone()),
+        description: Set(parsed.header.description.clone()),
+        version: Set(parsed.header.version.clone()),
+        dat_type: Set(dat_type.clone()),
+        platform_slug: Set(platform_slug.clone()),
+        entry_count: Set(entry_count),
+        imported_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+    }
+    .insert(db)
     .await?;
+    let dat_file_id = result.id;
 
     // Batch insert entries
     let batch_size = 500;
@@ -310,18 +312,23 @@ pub async fn import_dat_file(
             first = false;
         }
 
-        let mut q = sqlx::query(&query);
+        let mut values: Vec<sea_orm::Value> = Vec::new();
         for entry in chunk {
-            q = q.bind(dat_file_id)
-                .bind(&entry.game_name)
-                .bind(&entry.rom_name)
-                .bind(entry.size)
-                .bind(&entry.crc32)
-                .bind(&entry.md5)
-                .bind(&entry.sha1)
-                .bind(&entry.status);
+            values.push(dat_file_id.into());
+            values.push(entry.game_name.clone().into());
+            values.push(entry.rom_name.clone().into());
+            values.push(entry.size.into());
+            values.push(entry.crc32.clone().into());
+            values.push(entry.md5.clone().into());
+            values.push(entry.sha1.clone().into());
+            values.push(entry.status.clone().into());
         }
-        q.execute(pool).await?;
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            &query,
+            values,
+        ))
+        .await?;
 
         #[allow(clippy::cast_possible_truncation)]
         let progress_current = ((i + 1) * batch_size).min(parsed.entries.len()) as u64;
@@ -337,41 +344,51 @@ pub async fn import_dat_file(
     Ok(dat_file_id)
 }
 
+/// Row returned by the verification ROM query.
+#[derive(Debug, FromQueryResult)]
+struct VerifyRomRow {
+    id: i64,
+    name: String,
+    hash_crc32: Option<String>,
+    hash_md5: Option<String>,
+    hash_sha1: Option<String>,
+    source_rom_id: Option<String>,
+}
+
 /// Verify ROMs against imported DAT files.
 /// Computes triple hashes for ROMs, looks up in dat_entries, sets verification_status.
 pub async fn verify_roms(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     platform_id: Option<i64>,
     on_progress: impl Fn(ScanProgress) + Send,
     cancel: CancellationToken,
 ) -> AppResult<VerificationStats> {
     // Get ROMs that need verification (local ROMs with file paths)
-    let roms = if let Some(pid) = platform_id {
-        sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<String>, Option<String>)>(
+    let query = if let Some(pid) = platform_id {
+        Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "SELECT r.id, r.name, r.hash_crc32, r.hash_md5, r.hash_sha1, sr.source_rom_id
              FROM roms r
              LEFT JOIN source_roms sr ON sr.rom_id = r.id
              LEFT JOIN sources s ON s.id = sr.source_id AND s.source_type = 'local'
              WHERE r.platform_id = ?
              GROUP BY r.id",
+            [pid.into()],
         )
-        .bind(pid)
-        .fetch_all(pool)
-        .await?
     } else {
-        sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<String>, Option<String>)>(
+        Statement::from_string(
+            DatabaseBackend::Sqlite,
             "SELECT r.id, r.name, r.hash_crc32, r.hash_md5, r.hash_sha1, sr.source_rom_id
              FROM roms r
              LEFT JOIN source_roms sr ON sr.rom_id = r.id
              LEFT JOIN sources s ON s.id = sr.source_id AND s.source_type = 'local'
              GROUP BY r.id",
         )
-        .fetch_all(pool)
-        .await?
     };
+    let rom_rows = VerifyRomRow::find_by_statement(query).all(db).await?;
 
     #[allow(clippy::cast_possible_truncation)]
-    let total = roms.len() as u64;
+    let total = rom_rows.len() as u64;
     let mut stats = VerificationStats {
         verified: 0,
         unverified: 0,
@@ -379,7 +396,7 @@ pub async fn verify_roms(
         not_checked: 0,
     };
 
-    for (i, (rom_id, rom_name, existing_crc, existing_md5, existing_sha1, source_rom_id)) in roms.iter().enumerate() {
+    for (i, row) in rom_rows.iter().enumerate() {
         if cancel.is_cancelled() {
             return Ok(stats);
         }
@@ -391,14 +408,14 @@ pub async fn verify_roms(
                 source_id: -1,
                 total,
                 current,
-                current_item: format!("Verifying: {rom_name}"),
+                current_item: format!("Verifying: {}", row.name),
             });
         }
 
         // Compute hashes if missing and file is accessible
-        let (crc, md5, sha1) = if existing_crc.is_some() && existing_md5.is_some() && existing_sha1.is_some() {
-            (existing_crc.clone(), existing_md5.clone(), existing_sha1.clone())
-        } else if let Some(ref path_str) = source_rom_id {
+        let (crc, md5, sha1) = if row.hash_crc32.is_some() && row.hash_md5.is_some() && row.hash_sha1.is_some() {
+            (row.hash_crc32.clone(), row.hash_md5.clone(), row.hash_sha1.clone())
+        } else if let Some(ref path_str) = row.source_rom_id {
             let path = std::path::PathBuf::from(path_str);
             if path.exists() {
                 let path_clone = path.clone();
@@ -411,15 +428,11 @@ pub async fn verify_roms(
 
                 if let Some(h) = hashes {
                     // Store computed hashes
-                    let _ = sqlx::query(
+                    let _ = db.execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
                         "UPDATE roms SET hash_crc32 = ?, hash_md5 = ?, hash_sha1 = ? WHERE id = ?",
-                    )
-                    .bind(&h.crc32)
-                    .bind(&h.md5)
-                    .bind(&h.sha1)
-                    .bind(rom_id)
-                    .execute(pool)
-                    .await;
+                        [h.crc32.clone().into(), h.md5.clone().into(), h.sha1.clone().into(), row.id.into()],
+                    )).await;
 
                     (Some(h.crc32), Some(h.md5), Some(h.sha1))
                 } else {
@@ -432,15 +445,15 @@ pub async fn verify_roms(
             }
         } else {
             // No file accessible, try with whatever hashes we have
-            if existing_md5.is_none() && existing_crc.is_none() && existing_sha1.is_none() {
+            if row.hash_md5.is_none() && row.hash_crc32.is_none() && row.hash_sha1.is_none() {
                 stats.not_checked += 1;
                 continue;
             }
-            (existing_crc.clone(), existing_md5.clone(), existing_sha1.clone())
+            (row.hash_crc32.clone(), row.hash_md5.clone(), row.hash_sha1.clone())
         };
 
         // Look up in dat_entries by any available hash
-        let dat_match = find_dat_match(pool, &crc, &md5, &sha1).await?;
+        let dat_match = find_dat_match(db, &crc, &md5, &sha1).await?;
 
         match dat_match {
             Some((entry_id, game_name, status)) => {
@@ -451,25 +464,20 @@ pub async fn verify_roms(
                     stats.verified += 1;
                     "verified"
                 };
-                sqlx::query(
+                db.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
                     "UPDATE roms SET verification_status = ?, dat_entry_id = ?, dat_game_name = ? WHERE id = ?",
-                )
-                .bind(verification)
-                .bind(entry_id)
-                .bind(&game_name)
-                .bind(rom_id)
-                .execute(pool)
-                .await?;
+                    [verification.into(), entry_id.into(), game_name.into(), row.id.into()],
+                )).await?;
             }
             None => {
                 // Hashes computed but no DAT match
                 if crc.is_some() || md5.is_some() || sha1.is_some() {
-                    sqlx::query(
+                    db.execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
                         "UPDATE roms SET verification_status = 'unverified' WHERE id = ?",
-                    )
-                    .bind(rom_id)
-                    .execute(pool)
-                    .await?;
+                        [row.id.into()],
+                    )).await?;
                     stats.unverified += 1;
                 } else {
                     stats.not_checked += 1;
@@ -483,47 +491,41 @@ pub async fn verify_roms(
 
 /// Find a matching DAT entry by hash (try SHA1 first, then MD5, then CRC32).
 async fn find_dat_match(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     crc: &Option<String>,
     md5: &Option<String>,
     sha1: &Option<String>,
 ) -> AppResult<Option<(i64, String, Option<String>)>> {
     // SHA1 is most reliable
     if let Some(ref sha1_val) = sha1 {
-        if let Some(row) = sqlx::query_as::<_, (i64, String, Option<String>)>(
-            "SELECT id, game_name, status FROM dat_entries WHERE sha1 = ? LIMIT 1",
-        )
-        .bind(sha1_val)
-        .fetch_optional(pool)
-        .await?
+        if let Some(model) = dat_entries::Entity::find()
+            .filter(dat_entries::Column::Sha1.eq(sha1_val.as_str()))
+            .one(db)
+            .await?
         {
-            return Ok(Some(row));
+            return Ok(Some((model.id, model.game_name, model.status)));
         }
     }
 
     // MD5
     if let Some(ref md5_val) = md5 {
-        if let Some(row) = sqlx::query_as::<_, (i64, String, Option<String>)>(
-            "SELECT id, game_name, status FROM dat_entries WHERE md5 = ? LIMIT 1",
-        )
-        .bind(md5_val)
-        .fetch_optional(pool)
-        .await?
+        if let Some(model) = dat_entries::Entity::find()
+            .filter(dat_entries::Column::Md5.eq(md5_val.as_str()))
+            .one(db)
+            .await?
         {
-            return Ok(Some(row));
+            return Ok(Some((model.id, model.game_name, model.status)));
         }
     }
 
     // CRC32
     if let Some(ref crc_val) = crc {
-        if let Some(row) = sqlx::query_as::<_, (i64, String, Option<String>)>(
-            "SELECT id, game_name, status FROM dat_entries WHERE crc32 = ? LIMIT 1",
-        )
-        .bind(crc_val)
-        .fetch_optional(pool)
-        .await?
+        if let Some(model) = dat_entries::Entity::find()
+            .filter(dat_entries::Column::Crc32.eq(crc_val.as_str()))
+            .one(db)
+            .await?
         {
-            return Ok(Some(row));
+            return Ok(Some((model.id, model.game_name, model.status)));
         }
     }
 
@@ -532,38 +534,26 @@ async fn find_dat_match(
 
 /// Get verification summary stats for a platform (or all).
 pub async fn get_verification_stats(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     platform_id: Option<i64>,
 ) -> AppResult<VerificationStats> {
-    let (verified, unverified, bad_dump, not_checked) = if let Some(pid) = platform_id {
-        let v = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE platform_id = ? AND verification_status = 'verified'",
-        ).bind(pid).fetch_one(pool).await?;
-        let u = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE platform_id = ? AND verification_status = 'unverified'",
-        ).bind(pid).fetch_one(pool).await?;
-        let b = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE platform_id = ? AND verification_status = 'bad_dump'",
-        ).bind(pid).fetch_one(pool).await?;
-        let n = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE platform_id = ? AND verification_status IS NULL",
-        ).bind(pid).fetch_one(pool).await?;
-        (v, u, b, n)
-    } else {
-        let v = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE verification_status = 'verified'",
-        ).fetch_one(pool).await?;
-        let u = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE verification_status = 'unverified'",
-        ).fetch_one(pool).await?;
-        let b = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE verification_status = 'bad_dump'",
-        ).fetch_one(pool).await?;
-        let n = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM roms WHERE verification_status IS NULL",
-        ).fetch_one(pool).await?;
-        (v, u, b, n)
-    };
+    let mut base = roms::Entity::find();
+    if let Some(pid) = platform_id {
+        base = base.filter(roms::Column::PlatformId.eq(pid));
+    }
+
+    let verified = base.clone()
+        .filter(roms::Column::VerificationStatus.eq("verified"))
+        .count(db).await? as i64;
+    let unverified = base.clone()
+        .filter(roms::Column::VerificationStatus.eq("unverified"))
+        .count(db).await? as i64;
+    let bad_dump = base.clone()
+        .filter(roms::Column::VerificationStatus.eq("bad_dump"))
+        .count(db).await? as i64;
+    let not_checked = base
+        .filter(roms::Column::VerificationStatus.is_null())
+        .count(db).await? as i64;
 
     Ok(VerificationStats {
         verified,

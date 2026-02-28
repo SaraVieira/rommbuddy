@@ -4,7 +4,12 @@ import { useNavigate } from "react-router-dom";
 import { useSetAtom } from "jotai";
 import type { PlatformWithCount } from "../types";
 import { getPlatformIcon } from "../utils/platformIcons";
-import { selectedPlatformAtom, offsetAtom, searchInputAtom, searchAtom } from "../store/library";
+import {
+  selectedPlatformAtom,
+  offsetAtom,
+  searchInputAtom,
+  searchAtom,
+} from "../store/library";
 
 export default function Platforms() {
   const navigate = useNavigate();
@@ -21,7 +26,7 @@ export default function Platforms() {
     setLoading(true);
     try {
       const result: PlatformWithCount[] = await invoke(
-        "get_platforms_with_counts"
+        "get_platforms_with_counts",
       );
       setPlatforms(result);
     } catch (e) {
@@ -36,7 +41,7 @@ export default function Platforms() {
   }, [loadPlatforms]);
 
   const filtered = platforms.filter((p) =>
-    p.name.toLowerCase().includes(filter.toLowerCase())
+    p.name.toLowerCase().includes(filter.toLowerCase()),
   );
 
   const handlePlatformClick = (platformId: number) => {
@@ -46,12 +51,15 @@ export default function Platforms() {
     setSearch("");
     navigate("/");
   };
+  console.log("platform", platforms);
 
   return (
     <div className="page">
       <div className="flex flex-wrap justify-between items-end gap-xl mb-3xl">
         <div className="flex flex-col gap-sm">
-          <h1 className="font-display text-page-title font-bold text-text-primary uppercase">Platforms</h1>
+          <h1 className="font-display text-page-title font-bold text-text-primary uppercase">
+            Platforms
+          </h1>
           <span className="text-nav text-text-muted">
             {platforms.length} platforms configured
           </span>
@@ -68,7 +76,9 @@ export default function Platforms() {
       {loading ? (
         <div className="text-center p-[40px] text-text-muted">Loading...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center p-[40px] text-text-muted">No platforms found.</div>
+        <div className="text-center p-[40px] text-text-muted">
+          No platforms found.
+        </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-xl">
           {filtered.map((platform) => {
@@ -92,7 +102,9 @@ export default function Platforms() {
                     </span>
                   )}
                 </div>
-                <span className="text-body font-semibold tracking-wide uppercase">{platform.name}</span>
+                <span className="text-body font-semibold tracking-wide uppercase">
+                  {platform.name}
+                </span>
                 <span className="text-badge text-text-muted">
                   {platform.rom_count} ROMs
                 </span>
