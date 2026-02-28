@@ -4,8 +4,12 @@ use std::sync::LazyLock;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use sqlx::SqlitePool;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Statement, TransactionTrait,
+};
 
+use crate::entity::{launchbox_games, launchbox_images};
 use crate::error::{AppError, AppResult};
 use crate::models::ScanProgress;
 
@@ -44,8 +48,7 @@ static SLUG_TO_LAUNCHBOX: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
     ])
 });
 
-/// Row returned from `launchbox_games` SQL queries.
-#[derive(sqlx::FromRow)]
+/// Row returned from `launchbox_games` queries.
 pub struct LaunchBoxRow {
     pub database_id: String,
     pub overview: Option<String>,
@@ -238,7 +241,7 @@ pub async fn download_and_extract(
 /// Parse `Metadata.xml` and INSERT all games/images into `SQLite` tables.
 /// This replaces the old in-memory index approach.
 pub async fn import_to_db(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     on_progress: impl Fn(ScanProgress) + Send + 'static,
 ) -> AppResult<()> {
     let xml_path = metadata_xml_path();
@@ -254,8 +257,8 @@ pub async fn import_to_db(
     });
 
     // Clear existing data
-    sqlx::query("DELETE FROM launchbox_images").execute(pool).await?;
-    sqlx::query("DELETE FROM launchbox_games").execute(pool).await?;
+    launchbox_images::Entity::delete_many().exec(db).await?;
+    launchbox_games::Entity::delete_many().exec(db).await?;
 
     on_progress(ScanProgress {
         source_id: -1,
@@ -421,26 +424,25 @@ pub async fn import_to_db(
     // Batch insert games
     let mut count: u64 = 0;
     for chunk in games.chunks(500) {
-        let mut tx = pool.begin().await?;
+        let txn = db.begin().await?;
         for game in chunk {
-            sqlx::query(
-                "INSERT INTO launchbox_games (database_id, name, name_normalized, platform, overview, developer, publisher, genres, release_date, community_rating)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind(&game.database_id)
-            .bind(&game.name)
-            .bind(&game.name_normalized)
-            .bind(&game.platform)
-            .bind(&game.overview)
-            .bind(&game.developer)
-            .bind(&game.publisher)
-            .bind(&game.genres)
-            .bind(&game.release_date)
-            .bind(game.community_rating)
-            .execute(&mut *tx)
+            launchbox_games::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                database_id: Set(game.database_id.clone()),
+                name: Set(game.name.clone()),
+                name_normalized: Set(game.name_normalized.clone()),
+                platform: Set(game.platform.clone()),
+                overview: Set(game.overview.clone()),
+                developer: Set(game.developer.clone()),
+                publisher: Set(game.publisher.clone()),
+                genres: Set(game.genres.clone()),
+                release_date: Set(game.release_date.clone()),
+                community_rating: Set(game.community_rating),
+            }
+            .insert(&txn)
             .await?;
         }
-        tx.commit().await?;
+        txn.commit().await?;
         #[allow(clippy::cast_possible_truncation)]
         {
             count += chunk.len() as u64;
@@ -463,19 +465,18 @@ pub async fn import_to_db(
     // Batch insert images
     count = 0;
     for chunk in images.chunks(1000) {
-        let mut tx = pool.begin().await?;
+        let txn = db.begin().await?;
         for img in chunk {
-            sqlx::query(
-                "INSERT INTO launchbox_images (database_id, file_name, image_type)
-                 VALUES (?, ?, ?)",
-            )
-            .bind(&img.database_id)
-            .bind(&img.file_name)
-            .bind(&img.image_type)
-            .execute(&mut *tx)
+            launchbox_images::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                database_id: Set(img.database_id.clone()),
+                file_name: Set(img.file_name.clone()),
+                image_type: Set(img.image_type.clone()),
+            }
+            .insert(&txn)
             .await?;
         }
-        tx.commit().await?;
+        txn.commit().await?;
         #[allow(clippy::cast_possible_truncation)]
         {
             count += chunk.len() as u64;
@@ -504,88 +505,96 @@ pub async fn import_to_db(
 }
 
 /// Check if `launchbox_games` table has data.
-pub async fn has_imported_db(pool: &SqlitePool) -> bool {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM launchbox_games")
-        .fetch_one(pool)
+pub async fn has_imported_db(db: &DatabaseConnection) -> bool {
+    launchbox_games::Entity::find()
+        .count(db)
         .await
-        .is_ok_and(|c| c > 0)
+        .unwrap_or(0)
+        > 0
 }
 
 /// Look up a game by name and platform slug from the `SQLite` tables.
 pub async fn find_by_name(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     game_name: &str,
     platform_slug: &str,
 ) -> Option<LaunchBoxRow> {
     let lb_platform = SLUG_TO_LAUNCHBOX.get(platform_slug)?;
     let normalized = normalize_for_match(game_name);
 
-    let sql = "SELECT database_id, overview, developer, publisher, genres, release_date, community_rating
-         FROM launchbox_games
-         WHERE name_normalized = ? AND platform = ?
-         LIMIT 1";
-
     // Try exact normalized match
-    let row = sqlx::query_as::<_, LaunchBoxRow>(sql)
-        .bind(&normalized)
-        .bind(lb_platform)
-        .fetch_optional(pool)
+    let model = launchbox_games::Entity::find()
+        .filter(launchbox_games::Column::NameNormalized.eq(&normalized))
+        .filter(launchbox_games::Column::Platform.eq(*lb_platform))
+        .one(db)
         .await
         .ok()?;
 
-    if row.is_some() {
-        return row;
+    if let Some(m) = model {
+        return Some(model_to_row(m));
     }
 
     // Try with collapsed subtitles (" - " -> " ")
     let no_dash = normalized.replace(" - ", " ");
     if no_dash != normalized {
-        let row = sqlx::query_as::<_, LaunchBoxRow>(sql)
-            .bind(&no_dash)
-            .bind(lb_platform)
-            .fetch_optional(pool)
+        let model = launchbox_games::Entity::find()
+            .filter(launchbox_games::Column::NameNormalized.eq(&no_dash))
+            .filter(launchbox_games::Column::Platform.eq(*lb_platform))
+            .one(db)
             .await
             .ok()?;
 
-        if row.is_some() {
-            return row;
+        if let Some(m) = model {
+            return Some(model_to_row(m));
         }
     }
 
     None
 }
 
+/// Convert a `launchbox_games::Model` to a `LaunchBoxRow`.
+fn model_to_row(m: launchbox_games::Model) -> LaunchBoxRow {
+    LaunchBoxRow {
+        database_id: m.database_id,
+        overview: m.overview,
+        developer: m.developer,
+        publisher: m.publisher,
+        genres: m.genres,
+        release_date: m.release_date,
+        community_rating: m.community_rating,
+    }
+}
+
 /// Get the best cover image URL for a `LaunchBox` `database_id`.
-pub async fn get_image_url(pool: &SqlitePool, database_id: &str) -> Option<String> {
-    let file_name = sqlx::query_scalar::<_, String>(
-        "SELECT file_name FROM launchbox_images
-         WHERE database_id = ?
-         ORDER BY (image_type = 'Box - Front') DESC
-         LIMIT 1",
-    )
-    .bind(database_id)
-    .fetch_optional(pool)
-    .await
-    .ok()??;
+pub async fn get_image_url(db: &DatabaseConnection, database_id: &str) -> Option<String> {
+    let result = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "SELECT file_name FROM launchbox_images WHERE database_id = ? ORDER BY (image_type = 'Box - Front') DESC LIMIT 1",
+            [database_id.into()],
+        ))
+        .await
+        .ok()??;
+    let file_name: String = result.try_get("", "file_name").ok()?;
 
     Some(format!("https://images.launchbox-app.com/{file_name}"))
 }
 
 /// Get screenshot image URLs for a `LaunchBox` `database_id`.
-pub async fn get_screenshot_urls(pool: &SqlitePool, database_id: &str) -> Vec<String> {
-    let file_names = sqlx::query_scalar::<_, String>(
-        "SELECT file_name FROM launchbox_images
-         WHERE database_id = ? AND image_type LIKE '%Screenshot%'
-         LIMIT 10",
-    )
-    .bind(database_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+pub async fn get_screenshot_urls(db: &DatabaseConnection, database_id: &str) -> Vec<String> {
+    use sea_orm::QuerySelect;
 
-    file_names
+    let models = launchbox_images::Entity::find()
+        .filter(launchbox_images::Column::DatabaseId.eq(database_id))
+        .filter(launchbox_images::Column::ImageType.contains("Screenshot"))
+        .limit(10)
+        .all(db)
+        .await
+        .unwrap_or_default();
+
+    models
         .into_iter()
-        .map(|f| format!("https://images.launchbox-app.com/{f}"))
+        .map(|m| format!("https://images.launchbox-app.com/{}", m.file_name))
         .collect()
 }
 

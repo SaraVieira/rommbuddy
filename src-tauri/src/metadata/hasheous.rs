@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sea_orm::DatabaseConnection;
 
 /// Extract an ID value from a `serde_json::Value`, returning it as a String
 /// whether it was stored as a string or a number.
@@ -150,11 +150,15 @@ pub async fn lookup_by_md5(client: &reqwest::Client, md5: &str) -> Option<Hasheo
 }
 
 /// Save a Hasheous result to the `hasheous_cache` table.
-pub async fn save_to_cache(pool: &SqlitePool, rom_id: i64, result: &HasheousResult) {
+pub async fn save_to_cache(db: &DatabaseConnection, rom_id: i64, result: &HasheousResult) {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
     let genres_json = serde_json::to_string(&result.genres).unwrap_or_else(|_| "[]".to_string());
 
-    if let Err(e) = sqlx::query(
-        "INSERT INTO hasheous_cache (
+    if let Err(e) = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO hasheous_cache (
             rom_id, hasheous_id, name, publisher, year, description, genres,
             igdb_game_id, igdb_platform_id, thegamesdb_game_id,
             retroachievements_game_id, retroachievements_platform_id,
@@ -175,42 +179,40 @@ pub async fn save_to_cache(pool: &SqlitePool, rom_id: i64, result: &HasheousResu
             wikipedia_url = excluded.wikipedia_url,
             raw_response = excluded.raw_response,
             fetched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-    )
-    .bind(rom_id)
-    .bind(result.hasheous_id)
-    .bind(&result.name)
-    .bind(&result.publisher)
-    .bind(&result.year)
-    .bind(&result.description)
-    .bind(&genres_json)
-    .bind(&result.igdb_game_id)
-    .bind(&result.igdb_platform_id)
-    .bind(&result.thegamesdb_game_id)
-    .bind(&result.retroachievements_game_id)
-    .bind(&result.retroachievements_platform_id)
-    .bind(&result.wikipedia_url)
-    .bind(&result.raw_response)
-    .execute(pool)
-    .await
+            [
+                rom_id.into(),
+                result.hasheous_id.into(),
+                result.name.clone().into(),
+                result.publisher.clone().into(),
+                result.year.clone().into(),
+                result.description.clone().into(),
+                genres_json.into(),
+                result.igdb_game_id.clone().into(),
+                result.igdb_platform_id.clone().into(),
+                result.thegamesdb_game_id.clone().into(),
+                result.retroachievements_game_id.clone().into(),
+                result.retroachievements_platform_id.clone().into(),
+                result.wikipedia_url.clone().into(),
+                result.raw_response.clone().into(),
+            ],
+        ))
+        .await
     {
         log::warn!("Failed to save Hasheous cache for rom {rom_id}: {e}");
     }
 }
 
 /// Check if we already have a cached Hasheous result for a ROM.
-pub async fn get_cached(pool: &SqlitePool, rom_id: i64) -> Option<HasheousResult> {
-    let row = match sqlx::query_as::<_, HasheousCacheRow>(
-        "SELECT hasheous_id, name, publisher, year, description, genres,
-                igdb_game_id, igdb_platform_id, thegamesdb_game_id,
-                retroachievements_game_id, retroachievements_platform_id,
-                wikipedia_url, raw_response
-         FROM hasheous_cache WHERE rom_id = ?",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool)
-    .await
+pub async fn get_cached(db: &DatabaseConnection, rom_id: i64) -> Option<HasheousResult> {
+    use crate::entity::hasheous_cache::{self, Column};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let model = match hasheous_cache::Entity::find()
+        .filter(Column::RomId.eq(rom_id))
+        .one(db)
+        .await
     {
-        Ok(Some(row)) => row,
+        Ok(Some(m)) => m,
         Ok(None) => return None,
         Err(e) => {
             log::warn!("Failed to query Hasheous cache for rom {rom_id}: {e}");
@@ -218,38 +220,21 @@ pub async fn get_cached(pool: &SqlitePool, rom_id: i64) -> Option<HasheousResult
         }
     };
 
-    let genres: Vec<String> = serde_json::from_str(&row.genres).unwrap_or_default();
+    let genres: Vec<String> = serde_json::from_str(&model.genres).unwrap_or_default();
 
     Some(HasheousResult {
-        hasheous_id: row.hasheous_id,
-        name: row.name?,
-        publisher: row.publisher,
-        year: row.year,
-        description: row.description,
+        hasheous_id: model.hasheous_id,
+        name: model.name?,
+        publisher: model.publisher,
+        year: model.year,
+        description: model.description,
         genres,
-        igdb_game_id: row.igdb_game_id,
-        igdb_platform_id: row.igdb_platform_id,
-        thegamesdb_game_id: row.thegamesdb_game_id,
-        retroachievements_game_id: row.retroachievements_game_id,
-        retroachievements_platform_id: row.retroachievements_platform_id,
-        wikipedia_url: row.wikipedia_url,
-        raw_response: row.raw_response.unwrap_or_default(),
+        igdb_game_id: model.igdb_game_id,
+        igdb_platform_id: model.igdb_platform_id,
+        thegamesdb_game_id: model.thegamesdb_game_id,
+        retroachievements_game_id: model.retroachievements_game_id,
+        retroachievements_platform_id: model.retroachievements_platform_id,
+        wikipedia_url: model.wikipedia_url,
+        raw_response: model.raw_response.unwrap_or_default(),
     })
-}
-
-#[derive(sqlx::FromRow)]
-struct HasheousCacheRow {
-    hasheous_id: Option<i64>,
-    name: Option<String>,
-    publisher: Option<String>,
-    year: Option<String>,
-    description: Option<String>,
-    genres: String,
-    igdb_game_id: Option<String>,
-    igdb_platform_id: Option<String>,
-    thegamesdb_game_id: Option<String>,
-    retroachievements_game_id: Option<String>,
-    retroachievements_platform_id: Option<String>,
-    wikipedia_url: Option<String>,
-    raw_response: Option<String>,
 }

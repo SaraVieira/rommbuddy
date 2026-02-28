@@ -14,6 +14,9 @@ pub enum AppError {
     #[error("Migration error: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
 
+    #[error("ORM error: {0}")]
+    Orm(#[from] sea_orm::DbErr),
+
     #[error("Authentication error: {0}")]
     Auth(String),
 

@@ -3,6 +3,7 @@
 mod commands;
 mod db;
 mod dedup;
+pub mod entity;
 mod error;
 mod hash;
 mod metadata;
@@ -25,9 +26,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
-        .plugin(tauri_plugin_http::init());
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_log::Builder::new()
+          .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::Webview,
+          ))
+          .build());
 
     #[cfg(debug_assertions)]
     {
@@ -46,8 +51,8 @@ pub fn run() {
                 "sqlite:romm-buddy.db".to_string()
             };
 
-            let pool = tauri::async_runtime::block_on(db::create_pool(&db_path))?;
-            app.manage(pool);
+            let db = tauri::async_runtime::block_on(db::create_pool(&db_path))?;
+            app.manage(db);
             app.manage(commands::CancelTokenMap(
                 tokio::sync::Mutex::new(std::collections::HashMap::new()),
             ));

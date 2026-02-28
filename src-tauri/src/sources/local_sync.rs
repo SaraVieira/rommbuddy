@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use sqlx::SqlitePool;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, QueryFilter, Statement,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::dedup;
@@ -407,7 +410,7 @@ pub fn test_local_path(root: &Path) -> AppResult<(FolderLayout, u32, u64)> {
 pub async fn sync_local_to_db(
     source_id: i64,
     root: &Path,
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     on_progress: impl Fn(ScanProgress) + Send,
     cancel: CancellationToken,
 ) -> AppResult<()> {
@@ -433,15 +436,13 @@ pub async fn sync_local_to_db(
         };
 
         // Find or create platform
-        let platform_row = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM platforms WHERE slug = ?",
-        )
-        .bind(&canonical_slug)
-        .fetch_optional(pool)
-        .await?;
-
-        let local_platform_id = if let Some((id,)) = platform_row {
-            id
+        use crate::entity::platforms;
+        let existing = platforms::Entity::find()
+            .filter(platforms::Column::Slug.eq(&canonical_slug))
+            .one(db)
+            .await?;
+        let local_platform_id = if let Some(p) = existing {
+            p.id
         } else {
             let fallback = canonical_slug.as_str();
             let display_name = PLATFORM_DISPLAY_NAMES
@@ -450,15 +451,18 @@ pub async fn sync_local_to_db(
             log::info!(
                 "Creating new platform: slug='{canonical_slug}', name='{display_name}'",
             );
-            sqlx::query_scalar::<_, i64>(
-                "INSERT INTO platforms (slug, name, file_extensions, folder_aliases)
-                 VALUES (?, ?, '[]', '[]')
-                 RETURNING id",
-            )
-            .bind(&canonical_slug)
-            .bind(display_name)
-            .fetch_one(pool)
-            .await?
+            let model = platforms::ActiveModel {
+                id: sea_orm::ActiveValue::NotSet,
+                slug: Set(canonical_slug.clone()),
+                name: Set(display_name.to_string()),
+                igdb_id: Set(None),
+                screenscraper_id: Set(None),
+                file_extensions: Set("[]".to_string()),
+                folder_aliases: Set("[]".to_string()),
+                created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+                updated_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+            }.insert(db).await?;
+            model.id
         };
 
         // Iterate ROM files in this platform folder
@@ -493,7 +497,7 @@ pub async fn sync_local_to_db(
             // Upsert into roms + source_roms via dedup logic
             let abs_path = file_path.to_string_lossy().into_owned();
             let _rom_id = dedup::upsert_rom_deduped(
-                pool,
+                db,
                 local_platform_id,
                 &rom_name,
                 &file_name,
@@ -509,12 +513,11 @@ pub async fn sync_local_to_db(
     }
 
     // Update source last_synced_at
-    sqlx::query(
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "UPDATE sources SET last_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
-    )
-    .bind(source_id)
-    .execute(pool)
-    .await?;
+        [source_id.into()],
+    )).await?;
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use futures_util::StreamExt;
-use sqlx::{FromRow, SqlitePool};
+use sea_orm::DatabaseConnection;
 use tauri::ipc::Channel;
 use tauri::State;
 use tauri_plugin_store::StoreExt;
@@ -87,69 +87,52 @@ fn build_emulator_args(emulator_type: &str, rom_path: &str) -> Vec<String> {
     }
 }
 
-#[derive(FromRow)]
-struct PlatformRow {
-    id: i64,
-    slug: String,
-    name: String,
-    igdb_id: Option<i64>,
-    file_extensions: String,
-}
-
 #[tauri::command]
-pub async fn get_platforms(pool: State<'_, SqlitePool>) -> AppResult<Vec<Platform>> {
-    let rows = sqlx::query_as::<_, PlatformRow>(
-        "SELECT id, slug, name, igdb_id, file_extensions FROM platforms ORDER BY name",
-    )
-    .fetch_all(pool.inner())
-    .await?;
+pub async fn get_platforms(db: State<'_, DatabaseConnection>) -> AppResult<Vec<Platform>> {
+    use crate::entity::platforms;
+    use sea_orm::{EntityTrait, QueryOrder};
 
-    Ok(rows
+    let models = platforms::Entity::find()
+        .order_by_asc(platforms::Column::Name)
+        .all(db.inner())
+        .await?;
+
+    Ok(models
         .into_iter()
-        .map(|r| Platform {
-            id: r.id,
-            slug: r.slug,
-            name: r.name,
-            igdb_id: r.igdb_id,
-            file_extensions: serde_json::from_str(&r.file_extensions).unwrap_or_default(),
+        .map(|m| Platform {
+            id: m.id,
+            slug: m.slug,
+            name: m.name,
+            igdb_id: m.igdb_id,
+            file_extensions: serde_json::from_str(&m.file_extensions).unwrap_or_default(),
         })
         .collect())
 }
 
-#[derive(FromRow)]
-struct SourceRow {
-    id: i64,
-    name: String,
-    source_type: String,
-    url: Option<String>,
-    enabled: i32,
-    last_synced_at: Option<String>,
-    created_at: String,
-    updated_at: String,
-}
-
 #[tauri::command]
-pub async fn get_sources(pool: State<'_, SqlitePool>) -> AppResult<Vec<SourceConfig>> {
-    let rows = sqlx::query_as::<_, SourceRow>(
-        "SELECT id, name, source_type, url, enabled, last_synced_at, created_at, updated_at FROM sources ORDER BY name",
-    )
-    .fetch_all(pool.inner())
-    .await?;
+pub async fn get_sources(db: State<'_, DatabaseConnection>) -> AppResult<Vec<SourceConfig>> {
+    use crate::entity::sources;
+    use sea_orm::{EntityTrait, QueryOrder};
 
-    Ok(rows
+    let models = sources::Entity::find()
+        .order_by_asc(sources::Column::Name)
+        .all(db.inner())
+        .await?;
+
+    Ok(models
         .into_iter()
-        .map(|r| SourceConfig {
-            id: r.id,
-            name: r.name,
-            source_type: match r.source_type.as_str() {
+        .map(|m| SourceConfig {
+            id: m.id,
+            name: m.name,
+            source_type: match m.source_type.as_str() {
                 "romm" => crate::models::SourceType::Romm,
                 _ => crate::models::SourceType::Local,
             },
-            url: r.url,
-            enabled: r.enabled != 0,
-            last_synced_at: r.last_synced_at,
-            created_at: r.created_at.parse().unwrap_or_default(),
-            updated_at: r.updated_at.parse().unwrap_or_default(),
+            url: m.url,
+            enabled: m.enabled != 0,
+            last_synced_at: m.last_synced_at,
+            created_at: m.created_at.parse().unwrap_or_default(),
+            updated_at: m.updated_at.parse().unwrap_or_default(),
         })
         .collect())
 }
@@ -177,112 +160,124 @@ pub async fn test_local_path(path: String) -> AppResult<ConnectionTestResult> {
 
 #[tauri::command]
 pub async fn add_source(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     name: String,
     source_type: String,
     url: Option<String>,
     credentials_json: String,
 ) -> AppResult<i64> {
-    let id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO sources (name, source_type, url, credentials)
-         VALUES (?, ?, ?, ?)
-         RETURNING id",
-    )
-    .bind(&name)
-    .bind(&source_type)
-    .bind(&url)
-    .bind(&credentials_json)
-    .fetch_one(pool.inner())
+    use crate::entity::sources;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+
+    let model = sources::ActiveModel {
+        id: sea_orm::ActiveValue::NotSet,
+        name: Set(name),
+        source_type: Set(source_type),
+        url: Set(url),
+        credentials: Set(credentials_json),
+        settings: Set("{}".to_string()),
+        enabled: Set(1),
+        last_synced_at: Set(None),
+        created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+        updated_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+    }
+    .insert(db.inner())
     .await?;
-    Ok(id)
+
+    Ok(model.id)
 }
 
 #[tauri::command]
 pub async fn update_source(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     source_id: i64,
     name: String,
     url: Option<String>,
     credentials_json: String,
 ) -> AppResult<()> {
-    sqlx::query(
-        "UPDATE sources SET name = ?, url = ?, credentials = ?,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE id = ?",
-    )
-    .bind(&name)
-    .bind(&url)
-    .bind(&credentials_json)
-    .bind(source_id)
-    .execute(pool.inner())
-    .await?;
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    db.inner()
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE sources SET name = ?, url = ?, credentials = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            [name.into(), url.into(), credentials_json.into(), source_id.into()],
+        ))
+        .await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_source_credentials(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     source_id: i64,
 ) -> AppResult<String> {
-    let creds = sqlx::query_scalar::<_, String>(
-        "SELECT credentials FROM sources WHERE id = ?",
-    )
-    .bind(source_id)
-    .fetch_one(pool.inner())
-    .await?;
-    Ok(creds)
+    use crate::entity::sources;
+    use sea_orm::EntityTrait;
+
+    let model = sources::Entity::find_by_id(source_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::SourceNotFound(source_id.to_string()))?;
+    Ok(model.credentials)
 }
 
 #[tauri::command]
 pub async fn remove_source(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     source_id: i64,
 ) -> AppResult<()> {
-    let mut tx = pool.inner().begin().await?;
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
-    // Delete source_roms and library entries
-    sqlx::query("DELETE FROM source_roms WHERE source_id = ?")
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM library WHERE source_id = ?")
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
+    let txn = db.inner().begin().await?;
+
+    txn.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "DELETE FROM source_roms WHERE source_id = ?",
+        [source_id.into()],
+    ))
+    .await?;
+    txn.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "DELETE FROM library WHERE source_id = ?",
+        [source_id.into()],
+    ))
+    .await?;
     // Clean up orphaned roms (no remaining source_roms linking to them)
     // ON DELETE CASCADE on metadata/artwork/roms_fts handles the rest
-    sqlx::query(
+    txn.execute(Statement::from_string(
+        DatabaseBackend::Sqlite,
         "DELETE FROM roms WHERE id NOT IN (SELECT DISTINCT rom_id FROM source_roms)",
-    )
-    .execute(&mut *tx)
+    ))
     .await?;
-    sqlx::query("DELETE FROM sources WHERE id = ?")
-        .bind(source_id)
-        .execute(&mut *tx)
-        .await?;
+    txn.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "DELETE FROM sources WHERE id = ?",
+        [source_id.into()],
+    ))
+    .await?;
 
-    tx.commit().await?;
+    txn.commit().await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn sync_source(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     cancel_tokens: State<'_, CancelTokenMap>,
     source_id: i64,
     channel: Channel<ScanProgress>,
 ) -> AppResult<()> {
     // Get source info
-    let row = sqlx::query_as::<_, (Option<String>, String, String)>(
-        "SELECT url, credentials, source_type FROM sources WHERE id = ?",
-    )
-    .bind(source_id)
-    .fetch_optional(pool.inner())
-    .await?;
+    use crate::entity::sources;
+    use sea_orm::EntityTrait;
 
-    let (url_opt, credentials, source_type) = row.ok_or_else(|| {
-        AppError::SourceNotFound(source_id.to_string())
-    })?;
+    let source = sources::Entity::find_by_id(source_id)
+        .one(db.inner())
+        .await?
+        .ok_or_else(|| AppError::SourceNotFound(source_id.to_string()))?;
+
+    let (url_opt, credentials, source_type) = (source.url, source.credentials, source.source_type);
 
     let cancel = CancellationToken::new();
     cancel_tokens
@@ -291,7 +286,7 @@ pub async fn sync_source(
         .await
         .insert(source_id, cancel.clone());
 
-    let pool_ref = pool.inner().clone();
+    let db_ref = db.inner();
 
     let result = match source_type.as_str() {
         "local" => {
@@ -302,7 +297,7 @@ pub async fn sync_source(
                 .ok_or_else(|| AppError::Other("Missing path in credentials".to_string()))?
                 .clone();
             let root = std::path::PathBuf::from(path);
-            local_sync::sync_local_to_db(source_id, &root, &pool_ref, move |progress| {
+            local_sync::sync_local_to_db(source_id, &root, db_ref, move |progress| {
                 let _ = channel.send(progress);
             }, cancel)
             .await
@@ -322,7 +317,7 @@ pub async fn sync_source(
                 .ok_or_else(|| AppError::Other("Missing password in credentials".to_string()))?
                 .clone();
             let client = RommClient::new(url, username, password);
-            client.sync_to_db(source_id, &pool_ref, move |progress| {
+            client.sync_to_db(source_id, db_ref, move |progress| {
                 let _ = channel.send(progress);
             }, cancel)
             .await
@@ -347,7 +342,7 @@ pub async fn cancel_sync(
     Ok(())
 }
 
-#[derive(FromRow)]
+#[derive(Debug, sea_orm::FromQueryResult)]
 struct RomWithMetaRow {
     id: i64,
     platform_id: i64,
@@ -431,9 +426,26 @@ const ROM_WITH_META_SELECT: &str =
      FROM roms r
      JOIN platforms p ON p.id = r.platform_id";
 
+/// Helper: execute a raw count query with dynamic values via SeaORM.
+async fn count_query(db: &DatabaseConnection, sql: &str, values: Vec<sea_orm::Value>) -> AppResult<i64> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let result = db.query_one(Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values))
+        .await?
+        .ok_or_else(|| crate::error::AppError::Other("count query returned no rows".to_string()))?;
+    Ok(result.try_get::<i64>("", "COUNT(*)")
+        .or_else(|_| result.try_get_by_index::<i64>(0))?)
+}
+
+/// Helper: execute a RomWithMetaRow query via SeaORM.
+async fn query_rom_rows(db: &DatabaseConnection, sql: &str, values: Vec<sea_orm::Value>) -> AppResult<Vec<RomWithMetaRow>> {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+    let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values);
+    Ok(RomWithMetaRow::find_by_statement(stmt).all(db).await?)
+}
+
 #[tauri::command]
 pub async fn get_library_roms(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     platform_id: Option<i64>,
     search: Option<String>,
     favorites_only: Option<bool>,
@@ -445,7 +457,7 @@ pub async fn get_library_roms(
     // Build query based on filters
     let (rows, total) = if let Some(ref query) = search {
         if query.trim().is_empty() {
-            return get_library_roms_filtered(pool, platform_id, favorites_only, offset, limit)
+            return get_library_roms_filtered(db, platform_id, favorites_only, offset, limit)
                 .await;
         }
         // FTS search
@@ -463,21 +475,14 @@ pub async fn get_library_roms(
                  JOIN roms_fts ON roms_fts.rowid = r.id
                  WHERE roms_fts MATCH ? AND r.platform_id = ?{fav_clause}"
             );
-            sqlx::query_scalar::<_, i64>(&q)
-                .bind(&search_query)
-                .bind(pid)
-                .fetch_one(pool.inner())
-                .await?
+            count_query(db.inner(), &q, vec![search_query.clone().into(), pid.into()]).await?
         } else {
             let q = format!(
                 "SELECT COUNT(*) FROM roms r
                  JOIN roms_fts ON roms_fts.rowid = r.id
                  WHERE roms_fts MATCH ?{fav_clause}"
             );
-            sqlx::query_scalar::<_, i64>(&q)
-                .bind(&search_query)
-                .fetch_one(pool.inner())
-                .await?
+            count_query(db.inner(), &q, vec![search_query.clone().into()]).await?
         };
 
         let rows = if let Some(pid) = platform_id {
@@ -493,13 +498,7 @@ pub async fn get_library_roms(
                  ORDER BY r.name
                  LIMIT ? OFFSET ?",
             );
-            sqlx::query_as::<_, RomWithMetaRow>(&q)
-                .bind(&search_query)
-                .bind(pid)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool.inner())
-                .await?
+            query_rom_rows(db.inner(), &q, vec![search_query.clone().into(), pid.into(), limit.into(), offset.into()]).await?
         } else {
             let q = format!(
                 "{ROM_WITH_META_SELECT} JOIN roms_fts ON roms_fts.rowid = r.id
@@ -513,17 +512,12 @@ pub async fn get_library_roms(
                  ORDER BY r.name
                  LIMIT ? OFFSET ?",
             );
-            sqlx::query_as::<_, RomWithMetaRow>(&q)
-                .bind(&search_query)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool.inner())
-                .await?
+            query_rom_rows(db.inner(), &q, vec![search_query.clone().into(), limit.into(), offset.into()]).await?
         };
 
         (rows, count)
     } else {
-        return get_library_roms_filtered(pool, platform_id, favorites_only, offset, limit).await;
+        return get_library_roms_filtered(db, platform_id, favorites_only, offset, limit).await;
     };
 
     Ok(LibraryPage {
@@ -536,7 +530,7 @@ pub async fn get_library_roms(
 }
 
 async fn get_library_roms_filtered(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     platform_id: Option<i64>,
     favorites_only: bool,
     offset: i64,
@@ -556,10 +550,7 @@ async fn get_library_roms_filtered(
         };
 
         let count_q = format!("SELECT COUNT(*) FROM roms r {where_clause}");
-        let count = sqlx::query_scalar::<_, i64>(&count_q)
-            .bind(pid)
-            .fetch_one(pool.inner())
-            .await?;
+        let count = count_query(db.inner(), &count_q, vec![pid.into()]).await?;
 
         let q = format!(
             "{ROM_WITH_META_SELECT} LEFT JOIN metadata m ON m.rom_id = r.id
@@ -572,21 +563,14 @@ async fn get_library_roms_filtered(
              ORDER BY r.name
              LIMIT ? OFFSET ?",
         );
-        let rows = sqlx::query_as::<_, RomWithMetaRow>(&q)
-            .bind(pid)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool.inner())
-            .await?;
+        let rows = query_rom_rows(db.inner(), &q, vec![pid.into(), limit.into(), offset.into()]).await?;
 
         (rows, count)
     } else if favorites_only {
         let where_clause = format!("WHERE{fav_clause}");
 
         let count_q = format!("SELECT COUNT(*) FROM roms r {where_clause}");
-        let count = sqlx::query_scalar::<_, i64>(&count_q)
-            .fetch_one(pool.inner())
-            .await?;
+        let count = count_query(db.inner(), &count_q, vec![]).await?;
 
         let q = format!(
             "{ROM_WITH_META_SELECT} LEFT JOIN metadata m ON m.rom_id = r.id
@@ -599,17 +583,11 @@ async fn get_library_roms_filtered(
              ORDER BY r.name
              LIMIT ? OFFSET ?",
         );
-        let rows = sqlx::query_as::<_, RomWithMetaRow>(&q)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool.inner())
-            .await?;
+        let rows = query_rom_rows(db.inner(), &q, vec![limit.into(), offset.into()]).await?;
 
         (rows, count)
     } else {
-        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM roms")
-            .fetch_one(pool.inner())
-            .await?;
+        let count = count_query(db.inner(), "SELECT COUNT(*) FROM roms", vec![]).await?;
 
         let q = format!(
             "{ROM_WITH_META_SELECT} LEFT JOIN metadata m ON m.rom_id = r.id
@@ -621,11 +599,7 @@ async fn get_library_roms_filtered(
              ORDER BY r.name
              LIMIT ? OFFSET ?",
         );
-        let rows = sqlx::query_as::<_, RomWithMetaRow>(&q)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool.inner())
-            .await?;
+        let rows = query_rom_rows(db.inner(), &q, vec![limit.into(), offset.into()]).await?;
 
         (rows, count)
     };
@@ -641,81 +615,102 @@ async fn get_library_roms_filtered(
 
 #[tauri::command]
 pub async fn toggle_favorite(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
     favorite: bool,
 ) -> AppResult<bool> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+
     let fav_val: i64 = if favorite { 1 } else { 0 };
 
     // Upsert: if no library row exists, create one (look up source_id from source_roms)
-    let source_id = sqlx::query_scalar::<_, i64>(
+    #[derive(Debug, FromQueryResult)]
+    struct SourceIdRow {
+        source_id: i64,
+    }
+    let source_id = SourceIdRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "SELECT source_id FROM source_roms WHERE rom_id = ? LIMIT 1",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool.inner())
+        [rom_id.into()],
+    ))
+    .one(db.inner())
     .await?
+    .map(|r| r.source_id)
     .unwrap_or(0);
 
-    sqlx::query(
-        "INSERT INTO library (rom_id, source_id, favorite)
-         VALUES (?, ?, ?)
-         ON CONFLICT(rom_id, source_id) DO UPDATE SET favorite = excluded.favorite",
-    )
-    .bind(rom_id)
-    .bind(source_id)
-    .bind(fav_val)
-    .execute(pool.inner())
-    .await?;
+    db.inner()
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO library (rom_id, source_id, favorite) VALUES (?, ?, ?) ON CONFLICT(rom_id, source_id) DO UPDATE SET favorite = excluded.favorite",
+            [rom_id.into(), source_id.into(), fav_val.into()],
+        ))
+        .await?;
 
     Ok(favorite)
 }
 
 #[tauri::command]
-pub async fn get_favorites_count(pool: State<'_, SqlitePool>) -> AppResult<i64> {
-    let count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(DISTINCT rom_id) FROM library WHERE favorite = 1",
-    )
-    .fetch_one(pool.inner())
-    .await?;
+pub async fn get_favorites_count(db: State<'_, DatabaseConnection>) -> AppResult<i64> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let result = db
+        .inner()
+        .query_one(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "SELECT COUNT(DISTINCT rom_id) as cnt FROM library WHERE favorite = 1",
+        ))
+        .await?
+        .ok_or_else(|| AppError::Other("Count query failed".to_string()))?;
+    let count: i64 = result.try_get("", "cnt").unwrap_or(0);
     Ok(count)
 }
 
 #[tauri::command]
 pub async fn get_platforms_with_counts(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
 ) -> AppResult<Vec<PlatformWithCount>> {
-    let rows = sqlx::query_as::<_, (i64, String, String, i64)>(
-        "SELECT p.id, p.slug, p.name, COUNT(r.id) as rom_count
-         FROM platforms p
-         INNER JOIN roms r ON r.platform_id = p.id
-         GROUP BY p.id
-         ORDER BY p.name",
-    )
-    .fetch_all(pool.inner())
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+
+    #[derive(Debug, FromQueryResult)]
+    struct PlatformCountRow {
+        id: i64,
+        slug: String,
+        name: String,
+        rom_count: i64,
+    }
+
+    let rows = PlatformCountRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Sqlite,
+        "SELECT p.id, p.slug, p.name, COUNT(r.id) as rom_count FROM platforms p INNER JOIN roms r ON r.platform_id = p.id GROUP BY p.id ORDER BY p.name",
+    ))
+    .all(db.inner())
     .await?;
 
     Ok(rows
         .into_iter()
-        .map(|(id, slug, name, rom_count)| PlatformWithCount {
-            id,
-            slug,
-            name,
-            rom_count,
+        .map(|r| PlatformWithCount {
+            id: r.id,
+            slug: r.slug,
+            name: r.name,
+            rom_count: r.rom_count,
         })
         .collect())
 }
 
 #[tauri::command]
 pub async fn proxy_image(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     url: String,
 ) -> AppResult<String> {
     // Get any ROMM source credentials to authenticate if needed
-    let row = sqlx::query_as::<_, (String, String)>(
-        "SELECT url, credentials FROM sources WHERE source_type = 'romm' LIMIT 1",
-    )
-    .fetch_optional(pool.inner())
-    .await?;
+    use crate::entity::sources;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let romm_source = sources::Entity::find()
+        .filter(sources::Column::SourceType.eq("romm"))
+        .one(db.inner())
+        .await?;
+    let row = romm_source.map(|s| (s.url.unwrap_or_default(), s.credentials));
 
     if let Some((base_url, credentials)) = row {
         let creds: HashMap<String, String> =
@@ -953,49 +948,43 @@ pub async fn detect_cores(retroarch_path: String) -> AppResult<Vec<CoreInfo>> {
 }
 
 #[tauri::command]
-pub async fn get_core_mappings(pool: State<'_, SqlitePool>) -> AppResult<Vec<CoreMapping>> {
-    let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String)>(
-        "SELECT id, platform_id, core_name, core_path, is_default, emulator_type FROM core_mappings",
-    )
-    .fetch_all(pool.inner())
-    .await?;
+pub async fn get_core_mappings(db: State<'_, DatabaseConnection>) -> AppResult<Vec<CoreMapping>> {
+    use crate::entity::core_mappings;
+    use sea_orm::EntityTrait;
 
-    Ok(rows
+    let models = core_mappings::Entity::find().all(db.inner()).await?;
+
+    Ok(models
         .into_iter()
-        .map(|(id, platform_id, core_name, core_path, is_default, emulator_type)| CoreMapping {
-            id,
-            platform_id,
-            core_name,
-            core_path,
-            is_default: is_default != 0,
-            emulator_type,
+        .map(|m| CoreMapping {
+            id: m.id,
+            platform_id: m.platform_id,
+            core_name: m.core_name,
+            core_path: m.core_path,
+            is_default: m.is_default != 0,
+            emulator_type: m.emulator_type,
         })
         .collect())
 }
 
 #[tauri::command]
 pub async fn set_core_mapping(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     platform_id: i64,
     core_name: String,
     core_path: String,
     emulator_type: Option<String>,
 ) -> AppResult<()> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
     let emu_type = emulator_type.unwrap_or_else(|| "retroarch".to_string());
-    sqlx::query(
-        "INSERT INTO core_mappings (platform_id, core_name, core_path, is_default, emulator_type)
-         VALUES (?, ?, ?, 1, ?)
-         ON CONFLICT(platform_id) DO UPDATE SET
-           core_name = excluded.core_name,
-           core_path = excluded.core_path,
-           emulator_type = excluded.emulator_type",
-    )
-    .bind(platform_id)
-    .bind(&core_name)
-    .bind(&core_path)
-    .bind(&emu_type)
-    .execute(pool.inner())
-    .await?;
+    db.inner()
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO core_mappings (platform_id, core_name, core_path, is_default, emulator_type) VALUES (?, ?, ?, 1, ?) ON CONFLICT(platform_id) DO UPDATE SET core_name = excluded.core_name, core_path = excluded.core_path, emulator_type = excluded.emulator_type",
+            [platform_id.into(), core_name.into(), core_path.into(), emu_type.into()],
+        ))
+        .await?;
     Ok(())
 }
 
@@ -1003,54 +992,73 @@ pub async fn set_core_mapping(
 #[allow(clippy::similar_names)]
 pub async fn download_and_launch(
     app: tauri::AppHandle,
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
     source_id: i64,
     channel: Channel<DownloadProgress>,
     save_state_slot: Option<u32>,
     save_state_path: Option<String>,
 ) -> AppResult<()> {
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+
+    #[derive(Debug, FromQueryResult)]
+    struct RomDownloadInfo {
+        file_name: String,
+        platform_id: i64,
+        source_rom_id: String,
+        source_type: String,
+    }
+
     // 1. Get ROM info + source type (try exact source_id first, fall back to any source)
-    let rom = sqlx::query_as::<_, (String, i64, String, String)>(
+    let rom = RomDownloadInfo::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "SELECT r.file_name, r.platform_id, sr.source_rom_id, s.source_type
          FROM roms r
          JOIN source_roms sr ON sr.rom_id = r.id AND sr.source_id = ?
          JOIN sources s ON s.id = sr.source_id
          WHERE r.id = ?",
-    )
-    .bind(source_id)
-    .bind(rom_id)
-    .fetch_optional(pool.inner())
+        [source_id.into(), rom_id.into()],
+    ))
+    .one(db.inner())
     .await?;
 
     let rom = if let Some(r) = rom {
         r
     } else {
         // Fallback: use any available source for this ROM
-        sqlx::query_as::<_, (String, i64, String, String)>(
+        RomDownloadInfo::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "SELECT r.file_name, r.platform_id, sr.source_rom_id, s.source_type
              FROM roms r
              JOIN source_roms sr ON sr.rom_id = r.id
              JOIN sources s ON s.id = sr.source_id
              WHERE r.id = ?
              LIMIT 1",
-        )
-        .bind(rom_id)
-        .fetch_one(pool.inner())
+            [rom_id.into()],
+        ))
+        .one(db.inner())
         .await?
+        .ok_or_else(|| AppError::Other("ROM not found in any source".to_string()))?
     };
 
-    let (file_name, platform_id, source_rom_id, source_type) = rom;
+    let RomDownloadInfo { file_name, platform_id, source_rom_id, source_type } = rom;
 
     // 2. Check core mapping exists
-    let mapping = sqlx::query_as::<_, (String, String)>(
+    #[derive(Debug, FromQueryResult)]
+    struct CoreMappingRow {
+        core_path: String,
+        emulator_type: String,
+    }
+
+    let mapping = CoreMappingRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "SELECT core_path, emulator_type FROM core_mappings WHERE platform_id = ?",
-    )
-    .bind(platform_id)
-    .fetch_optional(pool.inner())
+        [platform_id.into()],
+    ))
+    .one(db.inner())
     .await?;
 
-    let Some((core_path, emulator_type)) = mapping else {
+    let Some(CoreMappingRow { core_path, emulator_type }) = mapping else {
         return Err(AppError::Other(
             "No core mapped for this platform. Configure it in Settings.".to_string(),
         ));
@@ -1102,12 +1110,20 @@ pub async fn download_and_launch(
             let _ = channel.send(DownloadProgress::status(rom_id, "downloading"));
 
             // ROMM: authenticated download
-            let (base_url, credentials) = sqlx::query_as::<_, (String, String)>(
+            #[derive(Debug, FromQueryResult)]
+            struct SourceCredRow {
+                url: String,
+                credentials: String,
+            }
+            let cred_row = SourceCredRow::find_by_statement(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "SELECT url, credentials FROM sources WHERE id = ?",
-            )
-            .bind(source_id)
-            .fetch_one(pool.inner())
-            .await?;
+                [source_id.into()],
+            ))
+            .one(db.inner())
+            .await?
+            .ok_or_else(|| AppError::Other("Source not found".to_string()))?;
+            let (base_url, credentials) = (cred_row.url, cred_row.credentials);
 
             let creds: std::collections::HashMap<String, String> =
                 serde_json::from_str(&credentials).unwrap_or_default();
@@ -1404,7 +1420,7 @@ pub struct CancelTokenMap(pub tokio::sync::Mutex<HashMap<i64, CancellationToken>
 
 #[tauri::command]
 pub async fn update_launchbox_db(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     channel: Channel<ScanProgress>,
 ) -> AppResult<()> {
     // Download and extract Metadata.xml
@@ -1415,7 +1431,7 @@ pub async fn update_launchbox_db(
     .await?;
 
     // Import into SQLite tables
-    crate::metadata::launchbox::import_to_db(pool.inner(), move |progress| {
+    crate::metadata::launchbox::import_to_db(db.inner(), move |progress| {
         let _ = channel.send(progress);
     })
     .await
@@ -1424,7 +1440,7 @@ pub async fn update_launchbox_db(
 #[tauri::command]
 pub async fn fetch_metadata(
     app: tauri::AppHandle,
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     cancel_tokens: State<'_, CancelTokenMap>,
     platform_id: Option<i64>,
     search: Option<String>,
@@ -1440,11 +1456,10 @@ pub async fn fetch_metadata(
     // Read ScreenScraper credentials if available
     let ss_creds = read_ss_creds_from_store(&app);
 
-    let pool_ref = pool.inner().clone();
     let result = crate::metadata::enrich_roms(
         platform_id,
         search.as_deref(),
-        &pool_ref,
+        db.inner(),
         move |progress| {
             let _ = channel.send(progress);
         },
@@ -1470,44 +1485,47 @@ pub async fn cancel_metadata(
 
 #[tauri::command]
 pub async fn has_launchbox_db(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
 ) -> AppResult<bool> {
-    Ok(crate::metadata::launchbox::has_imported_db(pool.inner()).await)
+    Ok(crate::metadata::launchbox::has_imported_db(db.inner()).await)
 }
 
 async fn compute_rom_hash_inner(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     rom_id: i64,
 ) -> AppResult<Option<String>> {
-    // Check if already computed
-    let existing = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT hash_md5 FROM roms WHERE id = ?",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    use crate::entity::roms;
+    use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement};
 
-    if let Some(ref h) = existing {
-        if !h.is_empty() {
-            return Ok(existing);
+    // Check if already computed
+    let rom_model = roms::Entity::find_by_id(rom_id).one(db).await?;
+    if let Some(ref rom) = rom_model {
+        if let Some(ref h) = rom.hash_md5 {
+            if !h.is_empty() {
+                return Ok(Some(h.clone()));
+            }
         }
     }
 
     // Get ROM info to determine how to access the file
-    let info = sqlx::query_as::<_, (String, String, String, i64)>(
-        "SELECT r.file_name, sr.source_rom_id, s.source_type, sr.source_id
-         FROM roms r
-         JOIN source_roms sr ON sr.rom_id = r.id
-         JOIN sources s ON s.id = sr.source_id
-         WHERE r.id = ?",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool)
+    #[derive(Debug, FromQueryResult)]
+    struct RomInfoRow {
+        file_name: String,
+        source_rom_id: String,
+        source_type: String,
+        source_id: i64,
+    }
+    let info = RomInfoRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "SELECT r.file_name, sr.source_rom_id, s.source_type, sr.source_id FROM roms r JOIN source_roms sr ON sr.rom_id = r.id JOIN sources s ON s.id = sr.source_id WHERE r.id = ?",
+        [rom_id.into()],
+    ))
+    .one(db)
     .await?
     .ok_or_else(|| AppError::Other(format!("ROM {rom_id} not found")))?;
 
-    let (file_name, source_rom_id, source_type, source_id) = info;
+    let (file_name, source_rom_id, source_type, source_id) =
+        (info.file_name, info.source_rom_id, info.source_type, info.source_id);
 
     if source_type == "local" {
         // Local: hash the file directly (extract from zip if needed)
@@ -1539,11 +1557,12 @@ async fn compute_rom_hash_inner(
         .map_err(|e| AppError::Other(e.to_string()))?
         .map_err(|e| AppError::Other(format!("Failed to compute hash: {e}")))?;
 
-        sqlx::query("UPDATE roms SET hash_md5 = ? WHERE id = ?")
-            .bind(&hash)
-            .bind(rom_id)
-            .execute(pool)
-            .await?;
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE roms SET hash_md5 = ? WHERE id = ?",
+            [hash.clone().into(), rom_id.into()],
+        ))
+        .await?;
         return Ok(Some(hash));
     }
 
@@ -1553,12 +1572,20 @@ async fn compute_rom_hash_inner(
     let tmp_path = tmp_dir.join(&file_name);
 
     // ROMM: authenticated download
-    let (base_url, credentials) = sqlx::query_as::<_, (String, String)>(
+    #[derive(Debug, FromQueryResult)]
+    struct SourceCredsRow {
+        url: String,
+        credentials: String,
+    }
+    let creds_row = SourceCredsRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "SELECT url, credentials FROM sources WHERE id = ?",
-    )
-    .bind(source_id)
-    .fetch_one(pool)
-    .await?;
+        [source_id.into()],
+    ))
+    .one(db)
+    .await?
+    .ok_or_else(|| AppError::Other(format!("Source {source_id} not found")))?;
+    let (base_url, credentials) = (creds_row.url, creds_row.credentials);
 
     let creds: std::collections::HashMap<String, String> =
         serde_json::from_str(&credentials).unwrap_or_default();
@@ -1623,106 +1650,94 @@ async fn compute_rom_hash_inner(
     let _ = tokio::fs::remove_file(&tmp_path).await;
 
     // Store hash
-    sqlx::query("UPDATE roms SET hash_md5 = ? WHERE id = ?")
-        .bind(&hash)
-        .bind(rom_id)
-        .execute(pool)
-        .await?;
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "UPDATE roms SET hash_md5 = ? WHERE id = ?",
+        [hash.clone().into(), rom_id.into()],
+    ))
+    .await?;
 
     Ok(Some(hash))
 }
 
 #[tauri::command]
 pub async fn compute_rom_hash(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<Option<String>> {
-    compute_rom_hash_inner(pool.inner(), rom_id).await
+    compute_rom_hash_inner(db.inner(), rom_id).await
 }
 
 #[tauri::command]
 pub async fn enrich_single_rom(
     app: tauri::AppHandle,
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<RomWithMeta> {
     let igdb_client = read_igdb_client_from_store(&app);
     let ss_creds = read_ss_creds_from_store(&app);
-    crate::metadata::enrich_single_rom(rom_id, pool.inner(), igdb_client.as_ref(), ss_creds.as_ref()).await?;
+    crate::metadata::enrich_single_rom(rom_id, db.inner(), igdb_client.as_ref(), ss_creds.as_ref()).await?;
 
     // Return the updated ROM data
+    fetch_rom_with_meta(db.inner(), rom_id).await
+}
+
+/// Fetch a single ROM with all metadata, cover, and screenshots.
+async fn fetch_rom_with_meta(db: &DatabaseConnection, rom_id: i64) -> AppResult<RomWithMeta> {
+    use crate::entity::artwork;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
     let q = format!(
         "{ROM_WITH_META_SELECT} LEFT JOIN metadata m ON m.rom_id = r.id
          LEFT JOIN artwork a ON a.rom_id = r.id AND a.art_type = 'cover'
-
          LEFT JOIN hasheous_cache hc ON hc.rom_id = r.id
          LEFT JOIN source_roms sr ON sr.rom_id = r.id
                  LEFT JOIN sources s ON s.id = sr.source_id
          WHERE r.id = ?
          GROUP BY r.id",
     );
-    let row = sqlx::query_as::<_, RomWithMetaRow>(&q)
-        .bind(rom_id)
-        .fetch_one(pool.inner())
-        .await?;
+    let rows = query_rom_rows(db, &q, vec![rom_id.into()]).await?;
+    let row = rows.into_iter().next()
+        .ok_or_else(|| crate::error::AppError::Other(format!("ROM {rom_id} not found")))?;
     let mut rom = row.into_rom_with_meta();
 
     // Fetch screenshot URLs separately (multiple per ROM)
-    rom.screenshot_urls = sqlx::query_scalar::<_, String>(
-        "SELECT url FROM artwork WHERE rom_id = ? AND art_type = 'screenshot' ORDER BY id",
-    )
-    .bind(rom_id)
-    .fetch_all(pool.inner())
-    .await
-    .unwrap_or_default();
+    rom.screenshot_urls = artwork::Entity::find()
+        .filter(artwork::Column::RomId.eq(rom_id))
+        .filter(artwork::Column::ArtType.eq("screenshot"))
+        .order_by_asc(artwork::Column::Id)
+        .all(db)
+        .await?
+        .into_iter()
+        .filter_map(|m| m.url)
+        .collect();
 
     Ok(rom)
 }
 
 #[tauri::command]
 pub async fn get_rom(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<RomWithMeta> {
-    let q = format!(
-        "{ROM_WITH_META_SELECT} LEFT JOIN metadata m ON m.rom_id = r.id
-         LEFT JOIN artwork a ON a.rom_id = r.id AND a.art_type = 'cover'
-
-         LEFT JOIN hasheous_cache hc ON hc.rom_id = r.id
-         LEFT JOIN source_roms sr ON sr.rom_id = r.id
-                 LEFT JOIN sources s ON s.id = sr.source_id
-         WHERE r.id = ?
-         GROUP BY r.id",
-    );
-    let row = sqlx::query_as::<_, RomWithMetaRow>(&q)
-        .bind(rom_id)
-        .fetch_one(pool.inner())
-        .await?;
-    let mut rom = row.into_rom_with_meta();
-
-    rom.screenshot_urls = sqlx::query_scalar::<_, String>(
-        "SELECT url FROM artwork WHERE rom_id = ? AND art_type = 'screenshot' ORDER BY id",
-    )
-    .bind(rom_id)
-    .fetch_all(pool.inner())
-    .await
-    .unwrap_or_default();
-
-    Ok(rom)
+    fetch_rom_with_meta(db.inner(), rom_id).await
 }
 
 #[tauri::command]
 pub async fn get_rom_screenshots(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<Vec<String>> {
-    let urls = sqlx::query_scalar::<_, String>(
-        "SELECT url FROM artwork WHERE rom_id = ? AND art_type = 'screenshot' ORDER BY id",
-    )
-    .bind(rom_id)
-    .fetch_all(pool.inner())
-    .await?;
-    Ok(urls)
+    use crate::entity::artwork;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    let models = artwork::Entity::find()
+        .filter(artwork::Column::RomId.eq(rom_id))
+        .filter(artwork::Column::ArtType.eq("screenshot"))
+        .order_by_asc(artwork::Column::Id)
+        .all(db.inner())
+        .await?;
+    Ok(models.into_iter().filter_map(|m| m.url).collect())
 }
 
 #[tauri::command]
@@ -1776,7 +1791,7 @@ pub async fn test_ra_connection(username: String, api_key: String) -> AppResult<
 #[tauri::command]
 pub async fn get_achievements(
     app: tauri::AppHandle,
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<AchievementData> {
     let store = app
@@ -1793,29 +1808,40 @@ pub async fn get_achievements(
 
     let client = reqwest::Client::new();
 
+    use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+
     // Try to get RA game ID from hasheous cache first
-    let cached_id = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT retroachievements_game_id FROM hasheous_cache WHERE rom_id = ?",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool.inner())
-    .await?
-    .flatten();
+    let cached_id = {
+        let result = db.inner()
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT retroachievements_game_id FROM hasheous_cache WHERE rom_id = ?",
+                [rom_id.into()],
+            ))
+            .await?;
+        result.and_then(|row| row.try_get_by_index::<Option<String>>(0).ok()).flatten()
+    };
 
     let ra_game_id = if let Some(id) = cached_id {
         log::info!("[RA] Using cached RA game ID: {id} for rom {rom_id}");
         id
     } else {
         // Fallback: search RA's game list by ROM hash
-        let rom_info = sqlx::query_as::<_, (String, Option<String>)>(
+        #[derive(Debug, FromQueryResult)]
+        struct RomHashInfo {
+            slug: String,
+            hash_md5: Option<String>,
+        }
+        let rom_info = RomHashInfo::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "SELECT p.slug, r.hash_md5 FROM roms r JOIN platforms p ON p.id = r.platform_id WHERE r.id = ?",
-        )
-        .bind(rom_id)
-        .fetch_optional(pool.inner())
+            [rom_id.into()],
+        ))
+        .one(db.inner())
         .await?
         .ok_or_else(|| AppError::Other(format!("ROM {rom_id} not found")))?;
 
-        let (platform_slug, md5) = rom_info;
+        let (platform_slug, md5) = (rom_info.slug, rom_info.hash_md5);
         log::info!("[RA] ROM {rom_id}: platform_slug={platform_slug}, has_md5={}", md5.is_some());
 
         // If ROM has no hash, compute it on-demand (downloads remote ROMs temporarily)
@@ -1823,7 +1849,7 @@ pub async fn get_achievements(
             Some(h) if !h.is_empty() => h,
             _ => {
                 log::info!("[RA] ROM {rom_id}: computing hash on-demand...");
-                compute_rom_hash_inner(pool.inner(), rom_id)
+                compute_rom_hash_inner(db.inner(), rom_id)
                     .await?
                     .ok_or_else(|| {
                         AppError::Other(
@@ -1848,11 +1874,14 @@ pub async fn get_achievements(
         // Clear it and recompute with zip-aware logic.
         if found_id.is_none() {
             log::info!("[RA] ROM {rom_id}: hash {md5} not found in RA, clearing and recomputing...");
-            let _ = sqlx::query("UPDATE roms SET hash_md5 = NULL WHERE id = ?")
-                .bind(rom_id)
-                .execute(pool.inner())
+            let _ = db.inner()
+                .execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "UPDATE roms SET hash_md5 = NULL WHERE id = ?",
+                    [rom_id.into()],
+                ))
                 .await;
-            if let Ok(Some(new_md5)) = compute_rom_hash_inner(pool.inner(), rom_id).await {
+            if let Ok(Some(new_md5)) = compute_rom_hash_inner(db.inner(), rom_id).await {
                 if new_md5 != md5 {
                     log::info!("[RA] ROM {rom_id}: recomputed hash={new_md5} (was {md5}), retrying RA lookup...");
                     found_id = crate::retroachievements::find_game_id_by_hash(
@@ -1874,15 +1903,15 @@ pub async fn get_achievements(
         log::info!("[RA] ROM {rom_id}: found RA game ID: {found_id}");
 
         // Cache the discovered RA game ID in hasheous_cache for next time
-        let _ = sqlx::query(
-            "INSERT INTO hasheous_cache (rom_id, retroachievements_game_id)
-             VALUES (?, ?)
-             ON CONFLICT(rom_id) DO UPDATE SET retroachievements_game_id = excluded.retroachievements_game_id",
-        )
-        .bind(rom_id)
-        .bind(&found_id)
-        .execute(pool.inner())
-        .await;
+        let _ = db.inner()
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "INSERT INTO hasheous_cache (rom_id, retroachievements_game_id)
+                 VALUES (?, ?)
+                 ON CONFLICT(rom_id) DO UPDATE SET retroachievements_game_id = excluded.retroachievements_game_id",
+                [rom_id.into(), found_id.clone().into()],
+            ))
+            .await;
 
         found_id
     };
@@ -1892,7 +1921,7 @@ pub async fn get_achievements(
 }
 
 /// A source link for a ROM (returned by get_rom_sources).
-#[derive(Debug, serde::Serialize, FromRow)]
+#[derive(Debug, serde::Serialize, sea_orm::FromQueryResult)]
 pub struct RomSource {
     pub source_id: i64,
     pub source_name: String,
@@ -1905,33 +1934,31 @@ pub struct RomSource {
 
 #[tauri::command]
 pub async fn get_rom_sources(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<Vec<RomSource>> {
-    let rows = sqlx::query_as::<_, RomSource>(
-        "SELECT sr.source_id, s.name as source_name, s.source_type,
-                sr.source_rom_id, sr.source_url, sr.file_name, sr.hash_md5
-         FROM source_roms sr
-         JOIN sources s ON s.id = sr.source_id
-         WHERE sr.rom_id = ?
-         ORDER BY s.name",
-    )
-    .bind(rom_id)
-    .fetch_all(pool.inner())
+    use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
+
+    let rows = RomSource::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "SELECT sr.source_id, s.name as source_name, s.source_type, sr.source_rom_id, sr.source_url, sr.file_name, sr.hash_md5 FROM source_roms sr JOIN sources s ON s.id = sr.source_id WHERE sr.rom_id = ? ORDER BY s.name",
+        [rom_id.into()],
+    ))
+    .all(db.inner())
     .await?;
     Ok(rows)
 }
 
 #[tauri::command]
-pub async fn deduplicate_roms(pool: State<'_, SqlitePool>) -> AppResult<u64> {
-    crate::dedup::reconcile_duplicates(pool.inner()).await
+pub async fn deduplicate_roms(db: State<'_, DatabaseConnection>) -> AppResult<u64> {
+    crate::dedup::reconcile_duplicates(db.inner()).await
 }
 
 // ---------- DAT verification commands ----------
 
 #[tauri::command]
 pub async fn import_dat_file(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     file_path: String,
     dat_type: String,
     platform_slug: String,
@@ -1939,7 +1966,7 @@ pub async fn import_dat_file(
 ) -> AppResult<i64> {
     let path = std::path::PathBuf::from(file_path);
     crate::metadata::dat::import_dat_file(
-        pool.inner(),
+        db.inner(),
         &path,
         &dat_type,
         &platform_slug,
@@ -1950,27 +1977,43 @@ pub async fn import_dat_file(
 
 #[tauri::command]
 pub async fn get_dat_files(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
 ) -> AppResult<Vec<crate::metadata::dat::DatFileInfo>> {
-    let rows = sqlx::query_as::<_, crate::metadata::dat::DatFileInfo>(
-        "SELECT id, name, description, version, dat_type, platform_slug, entry_count, imported_at
-         FROM dat_files
-         ORDER BY platform_slug, dat_type",
-    )
-    .fetch_all(pool.inner())
-    .await?;
-    Ok(rows)
+    use crate::entity::dat_files;
+    use sea_orm::{EntityTrait, QueryOrder};
+
+    let models = dat_files::Entity::find()
+        .order_by_asc(dat_files::Column::PlatformSlug)
+        .order_by_asc(dat_files::Column::DatType)
+        .all(db.inner())
+        .await?;
+
+    Ok(models
+        .into_iter()
+        .map(|m| crate::metadata::dat::DatFileInfo {
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            version: m.version,
+            dat_type: m.dat_type,
+            platform_slug: m.platform_slug,
+            entry_count: m.entry_count,
+            imported_at: m.imported_at,
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn remove_dat_file(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     dat_file_id: i64,
 ) -> AppResult<()> {
-    sqlx::query("DELETE FROM dat_files WHERE id = ?")
-        .bind(dat_file_id)
-        .execute(pool.inner())
-        .await?;
+    use crate::entity::dat_files;
+    use sea_orm::{EntityTrait, ModelTrait};
+
+    if let Some(model) = dat_files::Entity::find_by_id(dat_file_id).one(db.inner()).await? {
+        model.delete(db.inner()).await?;
+    }
     Ok(())
 }
 
@@ -1998,7 +2041,7 @@ pub async fn detect_dat_platform(file_path: String) -> AppResult<DatDetectResult
 
 #[tauri::command]
 pub async fn verify_library(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     cancel_map: State<'_, CancelTokenMap>,
     platform_id: Option<i64>,
     channel: Channel<ScanProgress>,
@@ -2011,7 +2054,7 @@ pub async fn verify_library(
         map.insert(VERIFY_KEY, cancel.clone());
     }
     let result = crate::metadata::dat::verify_roms(
-        pool.inner(),
+        db.inner(),
         platform_id,
         move |p| { let _ = channel.send(p); },
         cancel,
@@ -2038,10 +2081,10 @@ pub async fn cancel_verification(
 
 #[tauri::command]
 pub async fn get_verification_stats(
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     platform_id: Option<i64>,
 ) -> AppResult<crate::metadata::dat::VerificationStats> {
-    crate::metadata::dat::get_verification_stats(pool.inner(), platform_id).await
+    crate::metadata::dat::get_verification_stats(db.inner(), platform_id).await
 }
 
 // ---------- IGDB credential commands ----------
@@ -2204,36 +2247,55 @@ pub async fn test_ss_connection(
 #[tauri::command]
 pub async fn get_rom_saves(
     app: tauri::AppHandle,
-    pool: State<'_, SqlitePool>,
+    db: State<'_, DatabaseConnection>,
     rom_id: i64,
 ) -> AppResult<Vec<SaveFileInfo>> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+
     // 1. Query ROM file_name, platform_id, and local file path (if local source)
-    let (file_name, platform_id) = sqlx::query_as::<_, (String, i64)>(
+    #[derive(Debug, FromQueryResult)]
+    struct RomBasicInfo {
+        file_name: String,
+        platform_id: i64,
+    }
+    let rom_info = RomBasicInfo::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "SELECT file_name, platform_id FROM roms WHERE id = ?",
-    )
-    .bind(rom_id)
-    .fetch_one(pool.inner())
-    .await?;
+        [rom_id.into()],
+    ))
+    .one(db.inner())
+    .await?
+    .ok_or_else(|| AppError::Other(format!("ROM {rom_id} not found")))?;
+    let (file_name, platform_id) = (rom_info.file_name, rom_info.platform_id);
 
     // Get the ROM's local file path (for "same directory as ROM" scanning)
-    let rom_local_path: Option<String> = sqlx::query_scalar(
-        "SELECT sr.source_rom_id FROM source_roms sr \
-         JOIN sources s ON s.id = sr.source_id \
-         WHERE sr.rom_id = ? AND s.source_type = 'local' \
-         LIMIT 1",
-    )
-    .bind(rom_id)
-    .fetch_optional(pool.inner())
-    .await?;
+    let rom_local_path: Option<String> = {
+        let result = db.inner()
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT sr.source_rom_id FROM source_roms sr \
+                 JOIN sources s ON s.id = sr.source_id \
+                 WHERE sr.rom_id = ? AND s.source_type = 'local' \
+                 LIMIT 1",
+                [rom_id.into()],
+            ))
+            .await?;
+        result.and_then(|row| row.try_get_by_index::<String>(0).ok())
+    };
 
     // 2. Query emulator_type from core_mappings (default to "retroarch")
-    let emulator_type = sqlx::query_scalar::<_, String>(
-        "SELECT emulator_type FROM core_mappings WHERE platform_id = ? ORDER BY is_default DESC LIMIT 1",
-    )
-    .bind(platform_id)
-    .fetch_optional(pool.inner())
-    .await?
-    .unwrap_or_else(|| "retroarch".to_string());
+    let emulator_type = {
+        let result = db.inner()
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT emulator_type FROM core_mappings WHERE platform_id = ? ORDER BY is_default DESC LIMIT 1",
+                [platform_id.into()],
+            ))
+            .await?;
+        result
+            .and_then(|row| row.try_get_by_index::<String>(0).ok())
+            .unwrap_or_else(|| "retroarch".to_string())
+    };
 
     // 3. Get default save paths
     let defaults = saves::default_save_paths();

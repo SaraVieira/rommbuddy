@@ -1,37 +1,37 @@
-use sqlx::SqlitePool;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, Statement,
+};
 
+use crate::entity::roms;
 use crate::error::AppResult;
 
 /// Check if a ROM with this hash already exists on this platform.
 pub async fn find_existing_rom_by_hash(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     platform_id: i64,
     hash_md5: &str,
 ) -> AppResult<Option<i64>> {
-    let rom_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM roms WHERE platform_id = ? AND hash_md5 = ? LIMIT 1",
-    )
-    .bind(platform_id)
-    .bind(hash_md5)
-    .fetch_optional(pool)
-    .await?;
-    Ok(rom_id)
+    let model = roms::Entity::find()
+        .filter(roms::Column::PlatformId.eq(platform_id))
+        .filter(roms::Column::HashMd5.eq(hash_md5))
+        .one(db)
+        .await?;
+    Ok(model.map(|m| m.id))
 }
 
 /// Check if a ROM with this filename already exists on this platform.
 pub async fn find_existing_rom_by_filename(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     platform_id: i64,
     file_name: &str,
 ) -> AppResult<Option<i64>> {
-    let rom_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM roms WHERE platform_id = ? AND file_name = ? LIMIT 1",
-    )
-    .bind(platform_id)
-    .bind(file_name)
-    .fetch_optional(pool)
-    .await?;
-    Ok(rom_id)
+    let model = roms::Entity::find()
+        .filter(roms::Column::PlatformId.eq(platform_id))
+        .filter(roms::Column::FileName.eq(file_name))
+        .one(db)
+        .await?;
+    Ok(model.map(|m| m.id))
 }
 
 /// Insert or link a ROM with deduplication.
@@ -44,7 +44,7 @@ pub async fn find_existing_rom_by_filename(
 /// Returns the ROM id.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_rom_deduped(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     platform_id: i64,
     name: &str,
     file_name: &str,
@@ -58,18 +58,28 @@ pub async fn upsert_rom_deduped(
     // Phase 1: Check by hash (if available)
     if let Some(hash) = hash_md5 {
         if !hash.is_empty() {
-            if let Some(rom_id) = find_existing_rom_by_hash(pool, platform_id, hash).await? {
+            if let Some(rom_id) = find_existing_rom_by_hash(db, platform_id, hash).await? {
                 // ROM exists by hash — just link the source
-                link_source(pool, rom_id, source_id, source_rom_id, source_url, Some(file_name), hash_md5).await?;
+                link_source(
+                    db,
+                    rom_id,
+                    source_id,
+                    source_rom_id,
+                    source_url,
+                    Some(file_name),
+                    hash_md5,
+                )
+                .await?;
                 return Ok(rom_id);
             }
         }
     }
 
     // Phase 2: Check by filename
-    if let Some(rom_id) = find_existing_rom_by_filename(pool, platform_id, file_name).await? {
+    if let Some(rom_id) = find_existing_rom_by_filename(db, platform_id, file_name).await? {
         // Upsert: update metadata if richer
-        sqlx::query(
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "UPDATE roms SET
                 name = COALESCE(NULLIF(?, ''), name),
                 file_size = COALESCE(?, file_size),
@@ -77,42 +87,71 @@ pub async fn upsert_rom_deduped(
                 hash_md5 = COALESCE(?, hash_md5),
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?",
-        )
-        .bind(name)
-        .bind(file_size)
-        .bind(regions)
-        .bind(regions)
-        .bind(hash_md5)
-        .bind(rom_id)
-        .execute(pool)
+            [
+                name.into(),
+                file_size.into(),
+                regions.into(),
+                regions.into(),
+                hash_md5.into(),
+                rom_id.into(),
+            ],
+        ))
         .await?;
 
-        link_source(pool, rom_id, source_id, source_rom_id, source_url, Some(file_name), hash_md5).await?;
+        link_source(
+            db,
+            rom_id,
+            source_id,
+            source_rom_id,
+            source_url,
+            Some(file_name),
+            hash_md5,
+        )
+        .await?;
         return Ok(rom_id);
     }
 
     // Phase 3: New ROM
-    let rom_id = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO roms (platform_id, name, file_name, file_size, regions, hash_md5)
-         VALUES (?, ?, ?, ?, ?, ?)
-         RETURNING id",
-    )
-    .bind(platform_id)
-    .bind(name)
-    .bind(file_name)
-    .bind(file_size)
-    .bind(regions)
-    .bind(hash_md5)
-    .fetch_one(pool)
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
+    let model = roms::ActiveModel {
+        id: sea_orm::ActiveValue::NotSet,
+        platform_id: Set(platform_id),
+        name: Set(name.to_string()),
+        file_name: Set(file_name.to_string()),
+        file_size: Set(file_size),
+        hash_md5: Set(hash_md5.map(str::to_string)),
+        hash_crc32: Set(None),
+        hash_sha1: Set(None),
+        regions: Set(regions.to_string()),
+        languages: Set("[]".to_string()),
+        verification_status: Set(None),
+        dat_entry_id: Set(None),
+        dat_game_name: Set(None),
+        created_at: Set(now.clone()),
+        updated_at: Set(now),
+    }
+    .insert(db)
     .await?;
+    let rom_id = model.id;
 
-    link_source(pool, rom_id, source_id, source_rom_id, source_url, Some(file_name), hash_md5).await?;
+    link_source(
+        db,
+        rom_id,
+        source_id,
+        source_rom_id,
+        source_url,
+        Some(file_name),
+        hash_md5,
+    )
+    .await?;
     Ok(rom_id)
 }
 
 /// Create or update a source_roms link.
 async fn link_source(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     rom_id: i64,
     source_id: i64,
     source_rom_id: Option<&str>,
@@ -120,7 +159,8 @@ async fn link_source(
     file_name: Option<&str>,
     hash_md5: Option<&str>,
 ) -> AppResult<()> {
-    sqlx::query(
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
         "INSERT INTO source_roms (rom_id, source_id, source_rom_id, source_url, file_name, hash_md5)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(rom_id, source_id) DO UPDATE SET
@@ -128,43 +168,59 @@ async fn link_source(
            source_url = COALESCE(excluded.source_url, source_roms.source_url),
            file_name = COALESCE(excluded.file_name, source_roms.file_name),
            hash_md5 = COALESCE(excluded.hash_md5, source_roms.hash_md5)",
-    )
-    .bind(rom_id)
-    .bind(source_id)
-    .bind(source_rom_id)
-    .bind(source_url)
-    .bind(file_name)
-    .bind(hash_md5)
-    .execute(pool)
+        [
+            rom_id.into(),
+            source_id.into(),
+            source_rom_id.into(),
+            source_url.into(),
+            file_name.into(),
+            hash_md5.into(),
+        ],
+    ))
     .await?;
     Ok(())
 }
 
 /// Post-enrichment reconciliation: find ROMs sharing (platform_id, hash_md5)
 /// and merge them (keep oldest, move all related rows, delete dupes).
-pub async fn reconcile_duplicates(pool: &SqlitePool) -> AppResult<u64> {
+pub async fn reconcile_duplicates(db: &DatabaseConnection) -> AppResult<u64> {
     // Find duplicate groups
-    let groups = sqlx::query_as::<_, (i64, String)>(
+    #[derive(Debug, FromQueryResult)]
+    struct DupeGroup {
+        platform_id: i64,
+        hash_md5: String,
+    }
+
+    let groups = DupeGroup::find_by_statement(Statement::from_string(
+        DatabaseBackend::Sqlite,
         "SELECT platform_id, hash_md5
          FROM roms
          WHERE hash_md5 IS NOT NULL AND hash_md5 != ''
          GROUP BY platform_id, hash_md5
          HAVING COUNT(*) > 1",
-    )
-    .fetch_all(pool)
+    ))
+    .all(db)
     .await?;
 
     let mut merged_count: u64 = 0;
 
-    for (platform_id, hash_md5) in &groups {
+    for group in &groups {
         // Get all ROM IDs in this group, ordered by id (keep oldest)
-        let rom_ids = sqlx::query_scalar::<_, i64>(
+        #[derive(Debug, FromQueryResult)]
+        struct RomId {
+            id: i64,
+        }
+
+        let rom_ids: Vec<i64> = RomId::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "SELECT id FROM roms WHERE platform_id = ? AND hash_md5 = ? ORDER BY id",
-        )
-        .bind(platform_id)
-        .bind(hash_md5)
-        .fetch_all(pool)
-        .await?;
+            [group.platform_id.into(), group.hash_md5.clone().into()],
+        ))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
 
         if rom_ids.len() < 2 {
             continue;
@@ -175,55 +231,52 @@ pub async fn reconcile_duplicates(pool: &SqlitePool) -> AppResult<u64> {
 
         for &dupe_id in dupes {
             // Move source_roms links to keeper (ignore conflicts — keeper may already have that source)
-            sqlx::query(
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "UPDATE OR IGNORE source_roms SET rom_id = ? WHERE rom_id = ?",
-            )
-            .bind(keeper_id)
-            .bind(dupe_id)
-            .execute(pool)
+                [keeper_id.into(), dupe_id.into()],
+            ))
             .await?;
 
             // Move metadata (if keeper doesn't have it)
-            sqlx::query(
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "UPDATE OR IGNORE metadata SET rom_id = ? WHERE rom_id = ?",
-            )
-            .bind(keeper_id)
-            .bind(dupe_id)
-            .execute(pool)
+                [keeper_id.into(), dupe_id.into()],
+            ))
             .await?;
 
             // Move artwork (ignore conflicts)
-            sqlx::query(
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "UPDATE OR IGNORE artwork SET rom_id = ? WHERE rom_id = ?",
-            )
-            .bind(keeper_id)
-            .bind(dupe_id)
-            .execute(pool)
+                [keeper_id.into(), dupe_id.into()],
+            ))
             .await?;
 
             // Move library entries (ignore conflicts)
-            sqlx::query(
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "UPDATE OR IGNORE library SET rom_id = ? WHERE rom_id = ?",
-            )
-            .bind(keeper_id)
-            .bind(dupe_id)
-            .execute(pool)
+                [keeper_id.into(), dupe_id.into()],
+            ))
             .await?;
 
             // Move hasheous_cache (ignore conflicts)
-            sqlx::query(
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
                 "UPDATE OR IGNORE hasheous_cache SET rom_id = ? WHERE rom_id = ?",
-            )
-            .bind(keeper_id)
-            .bind(dupe_id)
-            .execute(pool)
+                [keeper_id.into(), dupe_id.into()],
+            ))
             .await?;
 
             // Delete the duplicate ROM (CASCADE will clean up orphaned rows)
-            sqlx::query("DELETE FROM roms WHERE id = ?")
-                .bind(dupe_id)
-                .execute(pool)
-                .await?;
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "DELETE FROM roms WHERE id = ?",
+                [dupe_id.into()],
+            ))
+            .await?;
 
             merged_count += 1;
         }

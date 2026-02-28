@@ -1,5 +1,5 @@
 use reqwest::Client;
-use sqlx::SqlitePool;
+use sea_orm::DatabaseConnection;
 use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
@@ -50,40 +50,40 @@ pub struct SsMedia {
 // Cache helpers
 // ---------------------------------------------------------------------------
 
-pub async fn is_cached(pool: &SqlitePool, rom_id: i64) -> bool {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM screenscraper_cache WHERE rom_id = ?",
-    )
-    .bind(rom_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0)
+pub async fn is_cached(db: &DatabaseConnection, rom_id: i64) -> bool {
+    use crate::entity::screenscraper_cache::{self, Column};
+    use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+
+    screenscraper_cache::Entity::find()
+        .filter(Column::RomId.eq(rom_id))
+        .count(db)
+        .await
+        .unwrap_or(0)
         > 0
 }
 
 pub async fn save_to_cache(
-    pool: &SqlitePool,
+    db: &DatabaseConnection,
     rom_id: i64,
     game_id: Option<i64>,
     raw_response: &str,
 ) {
-    if let Err(e) = sqlx::query(
-        "INSERT INTO screenscraper_cache (rom_id, screenscraper_game_id, raw_response)
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    if let Err(e) = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO screenscraper_cache (rom_id, screenscraper_game_id, raw_response)
          VALUES (?, ?, ?)
          ON CONFLICT(rom_id) DO UPDATE SET
            screenscraper_game_id = excluded.screenscraper_game_id,
            raw_response = excluded.raw_response,
            fetched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-    )
-    .bind(rom_id)
-    .bind(game_id)
-    .bind(raw_response)
-    .execute(pool)
-    .await
+            [rom_id.into(), game_id.into(), raw_response.into()],
+        ))
+        .await
     {
-        log::warn!(
-            "Failed to save ScreenScraper cache for rom {rom_id}: {e}"
-        );
+        log::warn!("Failed to save ScreenScraper cache for rom {rom_id}: {e}");
     }
 }
 

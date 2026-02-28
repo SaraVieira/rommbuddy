@@ -1,6 +1,9 @@
 use reqwest::Client;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, QueryFilter, Statement,
+};
 use serde::Deserialize;
-use sqlx::SqlitePool;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -227,7 +230,7 @@ impl RommClient {
     pub async fn sync_to_db(
         &self,
         source_id: i64,
-        pool: &SqlitePool,
+        db: &DatabaseConnection,
         on_progress: impl Fn(ScanProgress) + Send,
         cancel: CancellationToken,
     ) -> AppResult<()> {
@@ -258,30 +261,31 @@ impl RommClient {
             let canonical_slug = romm_platform_map::resolve_platform_slug(&platform.slug);
 
             // Find or create the platform in our DB
-            let platform_row = sqlx::query_as::<_, (i64,)>(
-                "SELECT id FROM platforms WHERE slug = ?",
-            )
-            .bind(&canonical_slug)
-            .fetch_optional(pool)
-            .await?;
-
-            let local_platform_id = if let Some((id,)) = platform_row {
-                id
+            use crate::entity::platforms;
+            let existing = platforms::Entity::find()
+                .filter(platforms::Column::Slug.eq(&canonical_slug))
+                .one(db)
+                .await?;
+            let local_platform_id = if let Some(p) = existing {
+                p.id
             } else {
                 // Auto-create the platform
                 log::info!(
                     "Creating new platform: slug='{canonical_slug}', name='{}'",
                     platform.display_name
                 );
-                sqlx::query_scalar::<_, i64>(
-                    "INSERT INTO platforms (slug, name, file_extensions, folder_aliases)
-                     VALUES (?, ?, '[]', '[]')
-                     RETURNING id",
-                )
-                .bind(&canonical_slug)
-                .bind(&platform.display_name)
-                .fetch_one(pool)
-                .await?
+                let model = platforms::ActiveModel {
+                    id: sea_orm::ActiveValue::NotSet,
+                    slug: Set(canonical_slug.clone()),
+                    name: Set(platform.display_name.clone()),
+                    igdb_id: Set(None),
+                    screenscraper_id: Set(None),
+                    file_extensions: Set("[]".to_string()),
+                    folder_aliases: Set("[]".to_string()),
+                    created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+                    updated_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+                }.insert(db).await?;
+                model.id
             };
 
             platform_map.insert(platform.id, local_platform_id);
@@ -330,7 +334,7 @@ impl RommClient {
                     self.base_url, rom.id, rom.fs_name
                 );
                 let rom_id = dedup::upsert_rom_deduped(
-                    pool,
+                    db,
                     local_platform_id,
                     &rom_name,
                     &rom.fs_name,
@@ -360,7 +364,8 @@ impl RommClient {
                     })
                 });
 
-                sqlx::query(
+                db.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
                     "INSERT INTO metadata (rom_id, description, genres, release_date)
                      VALUES (?, ?, ?, ?)
                      ON CONFLICT(rom_id) DO UPDATE SET
@@ -368,12 +373,8 @@ impl RommClient {
                        genres = excluded.genres,
                        release_date = COALESCE(excluded.release_date, metadata.release_date),
                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-                )
-                .bind(rom_id)
-                .bind(&rom.summary)
-                .bind(&genres_json)
-                .bind(&release_date)
-                .execute(pool)
+                    [rom_id.into(), rom.summary.clone().into(), genres_json.into(), release_date.into()],
+                ))
                 .await?;
 
                 // Upsert cover artwork
@@ -383,14 +384,11 @@ impl RommClient {
                     } else {
                         format!("{}{cover_url}", self.base_url)
                     };
-                    sqlx::query(
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'cover', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                    )
-                    .bind(rom_id)
-                    .bind(&full_url)
-                    .execute(pool)
+                    db.execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        "INSERT INTO artwork (rom_id, art_type, url) VALUES (?, 'cover', ?) ON CONFLICT(rom_id, art_type, url) DO NOTHING",
+                        [rom_id.into(), full_url.clone().into()],
+                    ))
                     .await?;
                 }
             }
@@ -403,12 +401,11 @@ impl RommClient {
         }
 
         // Update source last_synced_at
-        sqlx::query(
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
             "UPDATE sources SET last_synced_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
-        )
-        .bind(source_id)
-        .execute(pool)
-        .await?;
+            [source_id.into()],
+        )).await?;
 
         Ok(())
     }
