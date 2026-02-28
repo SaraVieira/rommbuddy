@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::LazyLock;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -12,41 +10,7 @@ use sea_orm::{
 use crate::entity::{launchbox_games, launchbox_images};
 use crate::error::{AppError, AppResult};
 use crate::models::ScanProgress;
-
-/// Canonical platform slug -> `LaunchBox` platform name.
-static SLUG_TO_LAUNCHBOX: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
-    HashMap::from([
-        ("gb", "Nintendo Game Boy"),
-        ("gbc", "Nintendo Game Boy Color"),
-        ("gba", "Nintendo Game Boy Advance"),
-        ("nes", "Nintendo Entertainment System"),
-        ("snes", "Super Nintendo Entertainment System"),
-        ("n64", "Nintendo 64"),
-        ("nds", "Nintendo DS"),
-        ("gc", "Nintendo GameCube"),
-        ("wii", "Nintendo Wii"),
-        ("vb", "Nintendo Virtual Boy"),
-        ("psx", "Sony Playstation"),
-        ("ps2", "Sony Playstation 2"),
-        ("psp", "Sony PSP"),
-        ("genesis", "Sega Genesis"),
-        ("gamegear", "Sega Game Gear"),
-        ("mastersystem", "Sega Master System"),
-        ("saturn", "Sega Saturn"),
-        ("dreamcast", "Sega Dreamcast"),
-        ("segacd", "Sega CD"),
-        ("neogeo", "SNK Neo Geo AES"),
-        ("ngp", "SNK Neo Geo Pocket"),
-        ("ngpc", "SNK Neo Geo Pocket Color"),
-        ("pce", "NEC TurboGrafx-16"),
-        ("pcecd", "NEC TurboGrafx-CD"),
-        ("lynx", "Atari Lynx"),
-        ("ws", "WonderSwan"),
-        ("wsc", "WonderSwan Color"),
-        ("coleco", "ColecoVision"),
-        ("arcade", "Arcade"),
-    ])
-});
+use crate::platform_registry;
 
 /// Row returned from `launchbox_games` queries.
 pub struct LaunchBoxRow {
@@ -519,13 +483,13 @@ pub async fn find_by_name(
     game_name: &str,
     platform_slug: &str,
 ) -> Option<LaunchBoxRow> {
-    let lb_platform = SLUG_TO_LAUNCHBOX.get(platform_slug)?;
+    let lb_platform = platform_registry::launchbox_name(platform_slug)?;
     let normalized = normalize_for_match(game_name);
 
     // Try exact normalized match
     let model = launchbox_games::Entity::find()
         .filter(launchbox_games::Column::NameNormalized.eq(&normalized))
-        .filter(launchbox_games::Column::Platform.eq(*lb_platform))
+        .filter(launchbox_games::Column::Platform.eq(lb_platform))
         .one(db)
         .await
         .ok()?;
@@ -539,7 +503,7 @@ pub async fn find_by_name(
     if no_dash != normalized {
         let model = launchbox_games::Entity::find()
             .filter(launchbox_games::Column::NameNormalized.eq(&no_dash))
-            .filter(launchbox_games::Column::Platform.eq(*lb_platform))
+            .filter(launchbox_games::Column::Platform.eq(lb_platform))
             .one(db)
             .await
             .ok()?;

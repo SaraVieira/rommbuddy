@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -14,55 +12,7 @@ use crate::entity::{dat_entries, dat_files, roms};
 use crate::error::{AppError, AppResult};
 use crate::hash;
 use crate::models::ScanProgress;
-
-/// Maps No-Intro / Redump DAT header names to canonical platform slugs.
-static DAT_NAME_TO_SLUG: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
-    HashMap::from([
-        // No-Intro names
-        ("Nintendo - Game Boy", "gb"),
-        ("Nintendo - Game Boy Color", "gbc"),
-        ("Nintendo - Game Boy Advance", "gba"),
-        ("Nintendo - Nintendo Entertainment System", "nes"),
-        ("Nintendo - Super Nintendo Entertainment System", "snes"),
-        ("Nintendo - Nintendo 64", "n64"),
-        ("Nintendo - Nintendo DS", "nds"),
-        ("Nintendo - Virtual Boy", "vb"),
-        ("Sega - Mega Drive - Genesis", "genesis"),
-        ("Sega - Game Gear", "gamegear"),
-        ("Sega - Master System - Mark III", "mastersystem"),
-        ("Sega - SG-1000", "sg1000"),
-        ("NEC - PC Engine - TurboGrafx-16", "pce"),
-        ("NEC - PC Engine SuperGrafx", "sgfx"),
-        ("Atari - 2600", "atari2600"),
-        ("Atari - 5200", "atari5200"),
-        ("Atari - 7800", "atari7800"),
-        ("Atari - Lynx", "lynx"),
-        ("SNK - Neo Geo Pocket", "ngp"),
-        ("SNK - Neo Geo Pocket Color", "ngpc"),
-        ("SNK - Neo Geo CD", "neocd"),
-        ("SNK - Neo Geo", "neogeo"),
-        ("Bandai - WonderSwan", "ws"),
-        ("Bandai - WonderSwan Color", "wsc"),
-        ("Coleco - ColecoVision", "colecovision"),
-        ("GCE - Vectrex", "vectrex"),
-        ("Mattel - Intellivision", "intellivision"),
-        ("Nintendo - Pokemon Mini", "pokemini"),
-        ("Nintendo - Famicom Disk System", "fds"),
-        // Redump names
-        ("Sony - PlayStation", "psx"),
-        ("Sony - PlayStation 2", "ps2"),
-        ("Sony - PlayStation Portable", "psp"),
-        ("Sega - Dreamcast", "dreamcast"),
-        ("Sega - Saturn", "saturn"),
-        ("Sega - Mega-CD - Sega CD", "segacd"),
-        ("NEC - PC Engine CD - TurboGrafx-CD", "pcecd"),
-        ("NEC - PC-FX", "pcfx"),
-        ("Nintendo - GameCube", "gamecube"),
-        ("Nintendo - Wii", "wii"),
-        ("Panasonic - 3DO Interactive Multiplayer", "3do"),
-        ("Philips - CD-i", "cdi"),
-    ])
-});
+use crate::platform_registry;
 
 /// Parsed DAT header info.
 pub struct DatHeader {
@@ -112,9 +62,7 @@ pub struct VerificationStats {
 
 /// Auto-detect platform slug from DAT header name.
 pub fn detect_platform_slug(dat_name: &str) -> Option<String> {
-    DAT_NAME_TO_SLUG
-        .get(dat_name)
-        .map(|s| (*s).to_string())
+    platform_registry::resolve_dat_name(dat_name).map(|s| s.to_string())
 }
 
 /// Parse a Logiqx XML DAT file, returning header + entries.

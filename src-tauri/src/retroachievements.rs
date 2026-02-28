@@ -1,54 +1,11 @@
-use std::collections::HashMap;
-
 use reqwest::Client;
 use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 use crate::models::{Achievement, AchievementData, RaTestResult};
+use crate::platform_registry;
 
 const RA_API_BASE: &str = "https://retroachievements.org/API";
-
-/// Map our platform slugs to RetroAchievements console IDs.
-fn platform_slug_to_ra_console_id(slug: &str) -> Option<u32> {
-    let map: HashMap<&str, u32> = HashMap::from([
-        ("gb", 4),
-        ("gbc", 6),
-        ("gba", 5),
-        ("nes", 7),
-        ("snes", 3),
-        ("n64", 2),
-        ("nds", 18),
-        ("genesis", 1),
-        ("mastersystem", 11),
-        ("gamegear", 15),
-        ("saturn", 39),
-        ("dreamcast", 40),
-        ("psx", 12),
-        ("ps2", 21),
-        ("psp", 41),
-        ("pce", 8),
-        ("pcecd", 76),
-        ("ngp", 14),
-        ("ngpc", 14),
-        ("neogeo", 14),
-        ("arcade", 27),
-        ("atari2600", 25),
-        ("atari7800", 51),
-        ("lynx", 13),
-        ("jaguar", 17),
-        ("colecovision", 44),
-        ("intellivision", 45),
-        ("sg1000", 33),
-        ("vb", 28),
-        ("virtualboy", 28),
-        ("ws", 53),
-        ("wsc", 53),
-        ("3do", 43),
-        ("segacd", 9),
-        ("sega32", 10),
-    ]);
-    map.get(slug).copied()
-}
 
 /// Search RA's game list (with hashes) to find a game ID matching our ROM's MD5.
 pub async fn find_game_id_by_hash(
@@ -58,7 +15,7 @@ pub async fn find_game_id_by_hash(
     platform_slug: &str,
     md5: &str,
 ) -> Option<String> {
-    let console_id = platform_slug_to_ra_console_id(platform_slug)?;
+    let console_id = platform_registry::ra_console_id(platform_slug)?;
     log::info!("[RA] find_game_id_by_hash: platform={platform_slug} console_id={console_id} md5={md5}");
     let url = format!(
         "{RA_API_BASE}/API_GetGameList.php?z={username}&y={api_key}&i={console_id}&h=1&f=1",

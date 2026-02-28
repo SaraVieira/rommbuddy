@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
@@ -11,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::dedup;
 use crate::error::AppResult;
 use crate::models::ScanProgress;
+use crate::platform_registry;
 
 /// Known ROM file extensions -- files matching these are indexed.
 const ROM_EXTENSIONS: &[&str] = &[
@@ -38,174 +37,6 @@ pub enum FolderLayout {
     /// Could not detect layout; treat folder names as lowercase slugs.
     Unknown,
 }
-
-/// Maps folder names (lowercase) to canonical platform slugs.
-/// Covers ES-DE, `OnionOS` abbreviations, `MinUI` tags, and common aliases.
-static FOLDER_TO_CANONICAL: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-
-    // -- Nintendo --
-    m.insert("gb", "gb");
-    m.insert("gbc", "gbc");
-    m.insert("gba", "gba");
-    m.insert("nes", "nes");
-    m.insert("fc", "nes");
-    m.insert("famicom", "nes");
-    m.insert("fds", "fds");
-    m.insert("snes", "snes");
-    m.insert("sfc", "snes");
-    m.insert("n64", "n64");
-    m.insert("nds", "nds");
-    m.insert("3ds", "3ds");
-    m.insert("gamecube", "gamecube");
-    m.insert("gc", "gamecube");
-    m.insert("wii", "wii");
-    m.insert("virtualboy", "vb");
-    m.insert("vb", "vb");
-
-    // -- Sony --
-    m.insert("psx", "psx");
-    m.insert("ps", "psx");
-    m.insert("ps1", "psx");
-    m.insert("ps2", "ps2");
-    m.insert("psp", "psp");
-
-    // -- Sega --
-    m.insert("genesis", "genesis");
-    m.insert("megadrive", "genesis");
-    m.insert("md", "genesis");
-    m.insert("segacd", "segacd");
-    m.insert("saturn", "saturn");
-    m.insert("dreamcast", "dreamcast");
-    m.insert("dc", "dreamcast");
-    m.insert("gamegear", "gamegear");
-    m.insert("gg", "gamegear");
-    m.insert("mastersystem", "mastersystem");
-    m.insert("ms", "mastersystem");
-    m.insert("sms", "mastersystem");
-    m.insert("sg-1000", "sg1000");
-    m.insert("sg1000", "sg1000");
-    m.insert("sg", "sg1000");
-
-    // -- SNK / Arcade --
-    m.insert("neogeo", "neogeo");
-    m.insert("arcade", "arcade");
-    m.insert("mame", "arcade");
-    m.insert("fbneo", "arcade");
-    m.insert("fba", "arcade");
-    m.insert("ngp", "ngp");
-    m.insert("ngpc", "ngpc");
-
-    // -- NEC --
-    m.insert("pcengine", "pce");
-    m.insert("pce", "pce");
-    m.insert("tg16", "pce");
-    m.insert("pcenginecd", "pcecd");
-    m.insert("pcecd", "pcecd");
-    m.insert("tgcd", "pcecd");
-    m.insert("supergrafx", "sgfx");
-    m.insert("sgfx", "sgfx");
-    m.insert("pcfx", "pcfx");
-
-    // -- Atari --
-    m.insert("atari2600", "atari2600");
-    m.insert("atari", "atari2600");
-    m.insert("a26", "atari2600");
-    m.insert("atari5200", "atari5200");
-    m.insert("atari7800", "atari7800");
-    m.insert("a78", "atari7800");
-    m.insert("lynx", "lynx");
-    m.insert("atarist", "atarist");
-    m.insert("jaguar", "jaguar");
-
-    // -- Bandai / Other --
-    m.insert("wonderswan", "ws");
-    m.insert("ws", "ws");
-    m.insert("wonderswancolor", "wsc");
-    m.insert("wsc", "wsc");
-    m.insert("coleco", "colecovision");
-    m.insert("colecovision", "colecovision");
-    m.insert("col", "colecovision");
-    m.insert("intellivision", "intellivision");
-    m.insert("int", "intellivision");
-    m.insert("vectrex", "vectrex");
-    m.insert("channelf", "channelf");
-
-    // -- Computers --
-    m.insert("msx", "msx");
-    m.insert("msx2", "msx2");
-    m.insert("dos", "dos");
-    m.insert("amstradcpc", "cpc");
-    m.insert("cpc", "cpc");
-    m.insert("zxspectrum", "zxspectrum");
-    m.insert("c64", "c64");
-    m.insert("amiga", "amiga");
-    m.insert("scummvm", "scummvm");
-
-    // -- Nintendo (handheld misc) --
-    m.insert("pokemini", "pokemini");
-    m.insert("sufami", "sufami");
-
-    m
-});
-
-/// Display names for platforms (used when auto-creating in DB).
-static PLATFORM_DISPLAY_NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-    m.insert("gb", "Game Boy");
-    m.insert("gbc", "Game Boy Color");
-    m.insert("gba", "Game Boy Advance");
-    m.insert("nes", "NES / Famicom");
-    m.insert("fds", "Famicom Disk System");
-    m.insert("snes", "SNES / Super Famicom");
-    m.insert("n64", "Nintendo 64");
-    m.insert("nds", "Nintendo DS");
-    m.insert("3ds", "Nintendo 3DS");
-    m.insert("gamecube", "GameCube");
-    m.insert("wii", "Wii");
-    m.insert("vb", "Virtual Boy");
-    m.insert("psx", "PlayStation");
-    m.insert("ps2", "PlayStation 2");
-    m.insert("psp", "PlayStation Portable");
-    m.insert("genesis", "Sega Genesis / Mega Drive");
-    m.insert("segacd", "Sega CD");
-    m.insert("saturn", "Sega Saturn");
-    m.insert("dreamcast", "Dreamcast");
-    m.insert("gamegear", "Game Gear");
-    m.insert("mastersystem", "Master System");
-    m.insert("sg1000", "SG-1000");
-    m.insert("neogeo", "Neo Geo");
-    m.insert("arcade", "Arcade");
-    m.insert("ngp", "Neo Geo Pocket");
-    m.insert("ngpc", "Neo Geo Pocket Color");
-    m.insert("pce", "TurboGrafx-16 / PC Engine");
-    m.insert("pcecd", "TurboGrafx-CD");
-    m.insert("sgfx", "SuperGrafx");
-    m.insert("pcfx", "PC-FX");
-    m.insert("atari2600", "Atari 2600");
-    m.insert("atari5200", "Atari 5200");
-    m.insert("atari7800", "Atari 7800");
-    m.insert("lynx", "Atari Lynx");
-    m.insert("atarist", "Atari ST");
-    m.insert("jaguar", "Atari Jaguar");
-    m.insert("ws", "WonderSwan");
-    m.insert("wsc", "WonderSwan Color");
-    m.insert("colecovision", "ColecoVision");
-    m.insert("intellivision", "Intellivision");
-    m.insert("vectrex", "Vectrex");
-    m.insert("channelf", "Channel F");
-    m.insert("msx", "MSX");
-    m.insert("msx2", "MSX2");
-    m.insert("dos", "DOS");
-    m.insert("cpc", "Amstrad CPC");
-    m.insert("zxspectrum", "ZX Spectrum");
-    m.insert("c64", "Commodore 64");
-    m.insert("amiga", "Amiga");
-    m.insert("scummvm", "ScummVM");
-    m.insert("pokemini", "Pokemon Mini");
-    m.insert("sufami", "Sufami Turbo");
-    m
-});
 
 /// Detect the folder layout convention of a ROM directory.
 pub fn detect_layout(root: &Path) -> FolderLayout {
@@ -247,7 +78,7 @@ pub fn detect_layout(root: &Path) -> FolderLayout {
                 .collect();
             let known_count = sub_names
                 .iter()
-                .filter(|n| FOLDER_TO_CANONICAL.contains_key(n.to_lowercase().as_str()))
+                .filter(|n| platform_registry::is_known_folder(&n.to_lowercase()))
                 .count();
             if known_count >= 2 {
                 return FolderLayout::Batocera;
@@ -284,7 +115,7 @@ pub fn detect_layout(root: &Path) -> FolderLayout {
     // ES-DE / `ArkOS`: lowercase slug folders matching known platforms
     let esde_count = entries
         .iter()
-        .filter(|n| FOLDER_TO_CANONICAL.contains_key(n.as_str()))
+        .filter(|n| platform_registry::is_known_folder(n.as_str()))
         .count();
     if esde_count >= 3 {
         return FolderLayout::EsDe;
@@ -309,16 +140,14 @@ fn resolve_folder_to_slug(folder_name: &str, layout: &FolderLayout) -> Option<St
     if layout == &FolderLayout::MinUi {
         let tag = extract_minui_tag(folder_name)?;
         let lower = tag.to_lowercase();
-        FOLDER_TO_CANONICAL
-            .get(lower.as_str())
-            .map(|s| (*s).to_string())
+        platform_registry::resolve_folder(&lower).map(|s| s.to_string())
     } else {
         let lower = folder_name.to_lowercase();
         let normalized = lower.replace(['-', '_'], "");
-        if let Some(&slug) = FOLDER_TO_CANONICAL.get(lower.as_str()) {
+        if let Some(slug) = platform_registry::resolve_folder(&lower) {
             Some(slug.to_string())
         } else {
-            FOLDER_TO_CANONICAL.get(normalized.as_str()).map(|slug| (*slug).to_string())
+            platform_registry::resolve_folder(&normalized).map(|s| s.to_string())
         }
     }
 }
@@ -444,10 +273,8 @@ pub async fn sync_local_to_db(
         let local_platform_id = if let Some(p) = existing {
             p.id
         } else {
-            let fallback = canonical_slug.as_str();
-            let display_name = PLATFORM_DISPLAY_NAMES
-                .get(canonical_slug.as_str())
-                .unwrap_or(&fallback);
+            let display_name = platform_registry::display_name(&canonical_slug)
+                .unwrap_or(canonical_slug.as_str());
             log::info!(
                 "Creating new platform: slug='{canonical_slug}', name='{display_name}'",
             );

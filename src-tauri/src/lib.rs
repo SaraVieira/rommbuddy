@@ -8,6 +8,7 @@ mod error;
 mod hash;
 mod metadata;
 mod models;
+pub mod platform_registry;
 mod retroachievements;
 mod saves;
 mod sources;

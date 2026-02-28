@@ -28,11 +28,17 @@ const ICON_MAP: Record<string, string> = {
   ds: "nintendo-ds.png",
   nds: "nintendo-ds.png",
   "nintendo-ds": "nintendo-ds.png",
-  "ds-lite": "nintendo-ds-lite.png",
+  "3ds": "nintendo-ds-lite.png",
   "nintendo-ds-lite": "nintendo-ds-lite.png",
   "virtual-boy": "nintendo-virtual-boy.png",
   virtualboy: "nintendo-virtual-boy.png",
   vb: "nintendo-virtual-boy.png",
+  "pokemon-mini": "pkm-mini.png",
+  ngc: "gc.png",
+
+  //Microspft
+
+  xbox: "xbox.png",
 
   // ── Sega ──
   genesis: "sega-genesis-us.png",
@@ -42,14 +48,17 @@ const ICON_MAP: Record<string, string> = {
   "sega-mega-drive": "sega-megadrive-eu.png",
   "32x": "sega-genesis-32x-us.png",
   "sega-32x": "sega-genesis-32x-us.png",
+  sega32: "sega-genesis-32x-us.png",
   "mega-drive-32x": "sega-megadrive-32x-eu.png",
   "sega-cd": "sega-genesis-cd-us.png",
+  segacd: "sega-genesis-cd-us.png",
   "mega-cd": "sega-mega-drive-cd-eu.png",
   "master-system": "sega-sg-1000-mk-iii.png",
   mastersystem: "sega-sg-1000-mk-iii.png",
   "sega-master-system": "sega-sg-1000-mk-iii.png",
   sms: "sega-sg-1000-mk-iii.png",
   "sg-1000": "sega-sg-1000.png",
+  sg1000: "sega-sg-1000.png",
   "sega-sg-1000": "sega-sg-1000.png",
   "game-gear": "sega-sg-1000-mk-ii.png",
   gamegear: "sega-sg-1000-mk-ii.png",
@@ -60,7 +69,6 @@ const ICON_MAP: Record<string, string> = {
   saturn: "sega-saturn-us.png",
   "sega-saturn": "sega-saturn-us.png",
   "sega-pico": "sega-pico-us.png",
-  pico: "sega-pico-us.png",
   "sc-3000": "sega-sc-3000h.png",
   "sega-sc-3000": "sega-sc-3000h.png",
 
@@ -85,9 +93,10 @@ const ICON_MAP: Record<string, string> = {
   turbografx: "nec-turbografx.png",
   "turbografx-16": "nec-turbografx.png",
   "pc-engine": "nec-pc-engine-duo.png",
-  "pce": "nec-pc-engine-duo.png",
+  pce: "nec-pc-engine-duo.png",
   "pc-engine-cd": "nec-pc-engine-duo-r.png",
   "turbografx-cd": "nec-turbografxcd.png",
+  pcecd: "nec-turbografxcd.png",
   turboduo: "nec-turboduo.png",
   supergrafx: "nec-supergrafx.png",
   "pc-fx": "nec-pc-fx.png",
@@ -96,6 +105,7 @@ const ICON_MAP: Record<string, string> = {
   pc98: "nec-pc-9801vx.png",
 
   // ── Atari ──
+  atari8bit: "atari-800.png",
   "atari-2600": "atari-7800-version-1.png",
   atari2600: "atari-7800-version-1.png",
   a2600: "atari-7800-version-1.png",
@@ -167,14 +177,14 @@ const ICON_MAP: Record<string, string> = {
   apple2: "apple-ii.png",
 
   // ── Sinclair ──
-  "zx-spectrum": "sinclair-zx-spectrum.png",
+  zxs: "sinclair-zx-spectrum.png",
   zxspectrum: "sinclair-zx-spectrum.png",
   spectrum: "sinclair-zx-spectrum.png",
   "zx-81": "sinclair-zx-81.png",
   zx81: "sinclair-zx-81.png",
 
   // ── Sharp ──
-  "x68000": "sharp-x68000.png",
+  x68000: "sharp-x68000.png",
   "sharp-x68000": "sharp-x68000.png",
   x68k: "sharp-x68000.png",
 
@@ -228,12 +238,14 @@ const ICON_MAP: Record<string, string> = {
   vt100: "dec-vt-100.png",
 
   // ── Arcade (use a generic console as fallback) ──
-  arcade: "snk-ngpc-carbon-black.png",
-  mame: "snk-ngpc-carbon-black.png",
-  "neo-geo-mvs": "snk-ngpc-carbon-black.png",
-  cps1: "snk-ngpc-carbon-black.png",
-  cps2: "snk-ngpc-carbon-black.png",
-  cps3: "snk-ngpc-carbon-black.png",
+  arcade: "arcade.png",
+  mame: "arcade.png",
+  "neo-geo-mvs": "arcade.png",
+  cps1: "arcade.png",
+  cps2: "arcade.png",
+  cps3: "arcade.png",
+
+  "tic-80": "tic.png",
 };
 
 export function getPlatformIcon(slug: string): string | null {

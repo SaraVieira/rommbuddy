@@ -98,6 +98,7 @@ export default function Platforms() {
                     />
                   ) : (
                     <span className="text-subtitle font-bold text-accent tracking-[1px] uppercase">
+                      {console.log(platform.slug)}
                       {platform.slug.substring(0, 2)}
                     </span>
                   )}

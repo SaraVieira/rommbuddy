@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::dedup;
 use crate::error::{AppError, AppResult};
 use crate::models::{ConnectionTestResult, ScanProgress, TokenPair};
-use crate::sources::romm_platform_map;
+use crate::platform_registry;
 
 /// ROMM API response types (deserialized from JSON).
 #[derive(Debug, Deserialize)]
@@ -258,7 +258,7 @@ impl RommClient {
             }
 
             // Map ROMM platform to our canonical slug
-            let canonical_slug = romm_platform_map::resolve_platform_slug(&platform.slug);
+            let canonical_slug = platform_registry::resolve_romm_slug(&platform.slug);
 
             // Find or create the platform in our DB
             use crate::entity::platforms;
