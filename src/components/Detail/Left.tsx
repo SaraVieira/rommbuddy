@@ -31,8 +31,8 @@ export const LeftPanel = ({ rom }: { rom: RomWithMeta }) => {
   }, [rom?.id]);
 
   return (
-    <div className="w-120 shrink-0 flex flex-col bg-bg-card overflow-y-auto">
-      <div className="w-full h-130 shrink-0 bg-bg-elevated flex items-center justify-center overflow-hidden">
+    <div className="w-120 shrink-0 flex flex-col bg-bg-card overflow-y-auto pt-2">
+      <div className="w-full min-h-130 shrink-0 bg-bg-elevated flex items-center justify-center overflow-hidden">
         {coverSrc ? (
           <img
             src={coverSrc}

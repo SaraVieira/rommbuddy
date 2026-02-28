@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { useAtom } from "jotai";
@@ -12,14 +12,12 @@ import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import Pagination from "../components/Pagination";
 import { useAppToast } from "../App";
 import {
   searchInputAtom,
   searchAtom,
   selectedPlatformAtom,
   viewAtom,
-  offsetAtom,
 } from "../store/library";
 
 const PAGE_SIZE = 50;
@@ -32,25 +30,29 @@ export default function Library() {
   const [total, setTotal] = useState(0);
   const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<ScanProgress | null>(
     null,
   );
+
+  // Local offset — internal to loading logic
+  const offsetRef = useRef(0);
 
   // Persistent state via jotai
   const [searchInput, setSearchInput] = useAtom(searchInputAtom);
   const [search, setSearch] = useAtom(searchAtom);
   const [selectedPlatform, setSelectedPlatform] = useAtom(selectedPlatformAtom);
   const [view, setView] = useAtom(viewAtom);
-  const [offset, setOffset] = useAtom(offsetAtom);
 
   const loadRoms = useCallback(async () => {
     setLoading(true);
+    offsetRef.current = 0;
     try {
       const result: LibraryPageType = await invoke("get_library_roms", {
         platformId: selectedPlatform,
         search: search || null,
-        offset,
+        offset: 0,
         limit: PAGE_SIZE,
       });
       setRoms(result.roms);
@@ -60,7 +62,33 @@ export default function Library() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPlatform, search, offset, toast]);
+  }, [selectedPlatform, search, toast]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    const newOffset = offsetRef.current + PAGE_SIZE;
+    if (newOffset >= total) return;
+    setLoadingMore(true);
+    offsetRef.current = newOffset;
+    try {
+      const result: LibraryPageType = await invoke("get_library_roms", {
+        platformId: selectedPlatform,
+        search: search || null,
+        offset: newOffset,
+        limit: PAGE_SIZE,
+      });
+      setRoms((prev) => [...prev, ...result.roms]);
+      setTotal(result.total);
+    } catch (e) {
+      toast(String(e), "error");
+      // Roll back offset on failure
+      offsetRef.current = newOffset - PAGE_SIZE;
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, total, selectedPlatform, search, toast]);
+
+  const hasMore = offsetRef.current + PAGE_SIZE < total;
 
   const loadPlatforms = useCallback(async () => {
     try {
@@ -85,14 +113,12 @@ export default function Library() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearch(searchInput);
-      setOffset(0);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchInput, setSearch, setOffset]);
+  }, [searchInput, setSearch]);
 
   const handlePlatformSelect = (id: number | null) => {
     setSelectedPlatform(id);
-    setOffset(0);
   };
 
   const handleSelectRom = (rom: RomWithMeta) => {
@@ -161,8 +187,8 @@ export default function Library() {
   }
 
   return (
-    <div className="page">
-      <div className="flex flex-col gap-xs mb-xl">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex flex-col gap-xs mb-xl shrink-0">
         <h1 className="font-display text-page-title font-bold text-text-primary uppercase">
           Library
         </h1>
@@ -170,7 +196,7 @@ export default function Library() {
           Browse and launch your ROM collection
         </span>
       </div>
-      <div className="flex items-center gap-md mb-3xl flex-wrap">
+      <div className="flex items-center gap-md mb-3xl flex-wrap shrink-0">
         <input
           type="text"
           className="min-w-40 flex-1 max-w-80 px-lg py-1.5 rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
@@ -195,7 +221,7 @@ export default function Library() {
       </div>
 
       {enrichProgress && (
-        <div className="mb-md px-sm py-xs bg-bg-elevated border border-border rounded-none text-body text-text-muted">
+        <div className="mb-md px-sm py-xs bg-bg-elevated border border-border rounded-none text-body text-text-muted shrink-0">
           <div className="flex items-center justify-between">
             <span className="truncate mr-md">
               {enrichProgress.current_item}
@@ -219,7 +245,7 @@ export default function Library() {
         </div>
       )}
 
-      <div className="mt-xl">
+      <div className="flex-1 min-h-0">
         {loading ? (
           <div className="text-center p-[40px] text-text-muted">Loading...</div>
         ) : roms.length === 0 ? (
@@ -231,22 +257,21 @@ export default function Library() {
             roms={roms}
             onSelect={handleSelectRom}
             onToggleFavorite={handleToggleFavorite}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
           />
         ) : (
           <RomList
             roms={roms}
             onSelect={handleSelectRom}
             onToggleFavorite={handleToggleFavorite}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
           />
         )}
       </div>
-
-      <Pagination
-        offset={offset}
-        total={total}
-        pageSize={PAGE_SIZE}
-        onOffsetChange={setOffset}
-      />
     </div>
   );
 }

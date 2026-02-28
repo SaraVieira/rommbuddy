@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RomWithMeta } from "../../types";
 import RomRow from "./Row";
@@ -7,11 +7,21 @@ interface Props {
   roms: RomWithMeta[];
   onSelect: (rom: RomWithMeta) => void;
   onToggleFavorite: (romId: number, favorite: boolean) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 const ROW_HEIGHT = 53; // ~42px image + py-1.5 (12px) ≈ 53px
 
-export default function RomList({ roms, onSelect, onToggleFavorite }: Props) {
+export default function RomList({
+  roms,
+  onSelect,
+  onToggleFavorite,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -21,11 +31,20 @@ export default function RomList({ roms, onSelect, onToggleFavorite }: Props) {
     overscan: 10,
   });
 
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !onLoadMore || !hasMore || loadingMore) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 500) {
+      onLoadMore();
+    }
+  }, [onLoadMore, hasMore, loadingMore]);
+
   return (
     <div
       ref={scrollRef}
       className="overflow-y-auto"
-      style={{ height: "calc(100vh - 260px)" }}
+      style={{ height: "100%" }}
+      onScroll={handleScroll}
     >
       <table className="w-full border-collapse">
         <thead>
@@ -77,6 +96,17 @@ export default function RomList({ roms, onSelect, onToggleFavorite }: Props) {
                   border: "none",
                 }}
               />
+            </tr>
+          )}
+          {loadingMore && (
+            <tr>
+              <td
+                colSpan={7}
+                className="text-center py-xl text-text-muted text-body font-mono"
+                style={{ border: "none" }}
+              >
+                Loading more...
+              </td>
             </tr>
           )}
         </tbody>

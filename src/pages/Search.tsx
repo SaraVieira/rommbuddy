@@ -6,7 +6,6 @@ import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import Pagination from "../components/Pagination";
 import { useAppToast } from "../App";
 
 const PAGE_SIZE = 50;
@@ -20,12 +19,14 @@ export default function Search() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [roms, setRoms] = useState<RomWithMeta[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  const offsetRef = useRef(0);
 
   // Auto-focus on mount
   useEffect(() => {
@@ -36,7 +37,6 @@ export default function Search() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-      setOffset(0);
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
@@ -57,11 +57,12 @@ export default function Search() {
     }
     setLoading(true);
     setSearched(true);
+    offsetRef.current = 0;
     try {
       const result: LibraryPage = await invoke("get_library_roms", {
         platformId: selectedPlatform,
         search: debouncedQuery || null,
-        offset,
+        offset: 0,
         limit: PAGE_SIZE,
       });
       setRoms(result.roms);
@@ -71,19 +72,44 @@ export default function Search() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, selectedPlatform, offset, toast]);
+  }, [debouncedQuery, selectedPlatform, toast]);
 
   useEffect(() => {
     doSearch();
   }, [doSearch]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    const newOffset = offsetRef.current + PAGE_SIZE;
+    if (newOffset >= total) return;
+    setLoadingMore(true);
+    offsetRef.current = newOffset;
+    try {
+      const result: LibraryPage = await invoke("get_library_roms", {
+        platformId: selectedPlatform,
+        search: debouncedQuery || null,
+        offset: newOffset,
+        limit: PAGE_SIZE,
+      });
+      setRoms((prev) => [...prev, ...result.roms]);
+      setTotal(result.total);
+    } catch (e) {
+      toast(String(e), "error");
+      offsetRef.current = newOffset - PAGE_SIZE;
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, total, selectedPlatform, debouncedQuery, toast]);
+
+  const hasMore = offsetRef.current + PAGE_SIZE < total;
 
   const handleSelectRom = (rom: RomWithMeta) => {
     navigate(`/rom/${rom.id}`, { state: { rom } });
   };
 
   return (
-    <div className="page">
-      <div className="flex flex-col gap-xs mb-xl">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex flex-col gap-xs mb-xl shrink-0">
         <h1 className="font-display text-page-title font-bold text-text-primary uppercase">
           Search
         </h1>
@@ -91,7 +117,7 @@ export default function Search() {
           Search across all platforms
         </span>
       </div>
-      <div className="flex items-center gap-md mb-3xl">
+      <div className="flex items-center gap-md mb-3xl shrink-0">
         <input
           ref={inputRef}
           type="text"
@@ -105,20 +131,19 @@ export default function Search() {
           selected={selectedPlatform}
           onSelect={(id) => {
             setSelectedPlatform(id);
-            setOffset(0);
           }}
         />
         <ViewToggle view={view} onChange={setView} />
       </div>
 
       {searched && !loading && roms.length > 0 && (
-        <div className="text-nav text-text-muted mb-lg">
+        <div className="text-nav text-text-muted mb-lg shrink-0">
           Found {total} result{total !== 1 ? "s" : ""}
           {debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}
         </div>
       )}
 
-      <div className="mt-xl">
+      <div className="flex-1 min-h-0">
         {!searched ? (
           <div className="text-center py-[60px] px-[20px] text-text-dim text-[15px]">
             Search by name or select a platform.
@@ -141,6 +166,9 @@ export default function Search() {
                 prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
               )
             }
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
           />
         ) : (
           <RomList
@@ -151,16 +179,12 @@ export default function Search() {
                 prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
               )
             }
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
           />
         )}
       </div>
-
-      <Pagination
-        offset={offset}
-        total={total}
-        pageSize={PAGE_SIZE}
-        onOffsetChange={setOffset}
-      />
     </div>
   );
 }

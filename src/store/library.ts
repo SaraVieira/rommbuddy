@@ -12,9 +12,6 @@ export const selectedPlatformAtom = atom<number | null>(null);
 /** Display mode */
 export const viewAtom = atom<"grid" | "list">("grid");
 
-/** Pagination offset */
-export const offsetAtom = atom(0);
-
 /** Show only favorites */
 export const favoritesOnlyAtom = atom(false);
 

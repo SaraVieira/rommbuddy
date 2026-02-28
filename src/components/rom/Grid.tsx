@@ -7,6 +7,9 @@ interface Props {
   roms: RomWithMeta[];
   onSelect: (rom: RomWithMeta) => void;
   onToggleFavorite: (romId: number, favorite: boolean) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 const CARD_MIN_WIDTH = 200;
@@ -20,6 +23,8 @@ interface VirtualGridProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onSelect: (rom: RomWithMeta) => void;
   onToggleFavorite: (romId: number, favorite: boolean) => void;
+  loadingMore?: boolean;
+  extraRows: number;
 }
 
 function VirtualGrid({
@@ -29,8 +34,10 @@ function VirtualGrid({
   scrollRef,
   onSelect,
   onToggleFavorite,
+  loadingMore,
+  extraRows,
 }: VirtualGridProps) {
-  const rowCount = Math.ceil(roms.length / columns);
+  const rowCount = Math.ceil(roms.length / columns) + extraRows;
 
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -43,6 +50,8 @@ function VirtualGrid({
     virtualizer.measure();
   }, [rowHeight, columns, virtualizer]);
 
+  const dataRowCount = Math.ceil(roms.length / columns);
+
   return (
     <div
       style={{
@@ -52,6 +61,29 @@ function VirtualGrid({
       }}
     >
       {virtualizer.getVirtualItems().map((virtualRow) => {
+        if (virtualRow.index >= dataRowCount) {
+          // Loading spinner row
+          return (
+            <div
+              key={virtualRow.key}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: virtualRow.size,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              {loadingMore && (
+                <div className="flex items-center justify-center py-xl text-text-muted text-body font-mono">
+                  Loading more...
+                </div>
+              )}
+            </div>
+          );
+        }
+
         const startIndex = virtualRow.index * columns;
         const rowRoms = roms.slice(startIndex, startIndex + columns);
 
@@ -89,7 +121,14 @@ function VirtualGrid({
   );
 }
 
-export default function RomGrid({ roms, onSelect, onToggleFavorite }: Props) {
+export default function RomGrid({
+  roms,
+  onSelect,
+  onToggleFavorite,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(1);
   const [rowHeight, setRowHeight] = useState(300);
@@ -118,18 +157,25 @@ export default function RomGrid({ roms, onSelect, onToggleFavorite }: Props) {
     return () => observer.disconnect();
   }, [recalcColumns]);
 
-  // Key that changes when the rom list changes, forcing virtualizer to fully remount
-  const gridKey = useMemo(
-    () =>
-      `${roms.length}-${roms[0]?.id ?? 0}-${roms[roms.length - 1]?.id ?? 0}`,
-    [roms],
-  );
+  // Only remount virtualizer on filter/search reset (first rom id changes), not on appends
+  const gridKey = useMemo(() => `${roms[0]?.id ?? 0}`, [roms]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !onLoadMore || !hasMore || loadingMore) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 500) {
+      onLoadMore();
+    }
+  }, [onLoadMore, hasMore, loadingMore]);
+
+  const extraRows = loadingMore ? 1 : 0;
 
   return (
     <div
       ref={scrollRef}
       className="overflow-y-auto"
-      style={{ height: "calc(100vh - 260px)" }}
+      style={{ height: "100%" }}
+      onScroll={handleScroll}
     >
       <VirtualGrid
         key={gridKey}
@@ -139,6 +185,8 @@ export default function RomGrid({ roms, onSelect, onToggleFavorite }: Props) {
         scrollRef={scrollRef}
         onSelect={onSelect}
         onToggleFavorite={onToggleFavorite}
+        loadingMore={loadingMore}
+        extraRows={extraRows}
       />
     </div>
   );

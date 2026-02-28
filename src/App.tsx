@@ -10,7 +10,6 @@ import type { PlatformWithCount, SourceConfig } from "./types";
 import {
   favoritesOnlyAtom,
   selectedPlatformAtom,
-  offsetAtom,
   searchInputAtom,
   searchAtom,
 } from "./store/library";
@@ -51,14 +50,15 @@ export default function App() {
 
   const setFavoritesOnly = useSetAtom(favoritesOnlyAtom);
   const setSelectedPlatform = useSetAtom(selectedPlatformAtom);
-  const setOffset = useSetAtom(offsetAtom);
   const setSearchInput = useSetAtom(searchInputAtom);
   const setSearch = useSetAtom(searchAtom);
 
   useEffect(() => {
     (async () => {
       try {
-        const platforms: PlatformWithCount[] = await invoke("get_platforms_with_counts");
+        const platforms: PlatformWithCount[] = await invoke(
+          "get_platforms_with_counts",
+        );
         setPlatformCount(platforms.length);
         setRomCount(platforms.reduce((sum, p) => sum + p.rom_count, 0));
       } catch {}
@@ -76,7 +76,6 @@ export default function App() {
   const handleFavoritesClick = () => {
     setFavoritesOnly(true);
     setSelectedPlatform(null);
-    setOffset(0);
     setSearchInput("");
     setSearch("");
     navigate("/");
@@ -84,91 +83,102 @@ export default function App() {
 
   return (
     <ToastContext.Provider value={addToast}>
-    <SyncContext.Provider value={syncState}>
-      <div className="flex h-screen overflow-hidden">
-        <nav className="w-sidebar bg-bg-sidebar border-r border-border flex flex-col shrink-0">
-          <div
-            data-tauri-drag-region
-            className="pt-[38px] p-2xl px-xl border-b border-border flex items-center gap-lg">
-            <div className="w-[--height-logo-mark] h-logo-mark bg-accent flex items-center justify-center font-mono text-logo font-bold text-text-on-accent shrink-0">
-              [R]
+      <SyncContext.Provider value={syncState}>
+        <div className="flex h-screen overflow-hidden">
+          <nav className="w-sidebar bg-bg-sidebar border-r border-border flex flex-col shrink-0">
+            <div
+              data-tauri-drag-region
+              className="pt-[38px] p-2xl px-xl border-b border-border flex items-center gap-lg"
+            >
+              <img
+                src="/romm-buddy-icon.png"
+                alt="RoMM Buddy"
+                className="w-[--height-logo-mark] h-logo-mark shrink-0 rounded-lg"
+              />
+              <span className="font-mono text-logo font-semibold text-text-primary tracking-[1px] uppercase">
+                Romm Buddy
+              </span>
             </div>
-            <span className="font-mono text-logo font-semibold text-text-primary tracking-[1px] uppercase">
-              Romm Buddy
-            </span>
-          </div>
-          <ul className="list-none p-md flex flex-col gap-xs flex-1">
-            <li>
-              <NavLink to="/" end className={navLinkClass}>
-                <BookOpen size={14} />
-                <span>Library</span>
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/platforms" className={navLinkClass}>
-                <Cpu size={14} />
-                <span>Platforms</span>
-              </NavLink>
-            </li>
-            <li>
-              <button
-                className="flex w-full items-center gap-md px-lg py-md border-l-2 border-l-transparent no-underline font-mono text-nav font-medium uppercase tracking-wide transition-colors bg-transparent cursor-pointer text-text-secondary hover:bg-accent-tint-10 hover:text-text-primary"
-                onClick={handleFavoritesClick}
-              >
-                <Heart size={14} />
+            <ul className="list-none p-md flex flex-col gap-xs flex-1">
+              <li>
+                <NavLink to="/" end className={navLinkClass}>
+                  <BookOpen size={14} />
+                  <span>Library</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to="/platforms" className={navLinkClass}>
+                  <Cpu size={14} />
+                  <span>Platforms</span>
+                </NavLink>
+              </li>
+              <li>
+                <button
+                  className="flex w-full items-center gap-md px-lg py-md border-l-2 border-l-transparent no-underline font-mono text-nav font-medium uppercase tracking-wide transition-colors bg-transparent cursor-pointer text-text-secondary hover:bg-accent-tint-10 hover:text-text-primary"
+                  onClick={handleFavoritesClick}
+                >
+                  <Heart size={14} />
+                  <span>Favorites</span>
+                </button>
+              </li>
+              <li>
+                <NavLink to="/search" className={navLinkClass}>
+                  <Search size={14} />
+                  <span>Search</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to="/sources" className={navLinkClass}>
+                  <Database size={14} />
+                  <span>Sources</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to="/settings" className={navLinkClass}>
+                  <Settings size={14} />
+                  <span>Settings</span>
+                </NavLink>
+              </li>
+            </ul>
+            <div className="border-t border-border p-xl font-mono">
+              <div className="text-label text-text-muted uppercase tracking-[1px] mb-lg">
+                // Collection
+              </div>
+              <div className="flex justify-between text-nav text-text-secondary py-sm">
                 <span>Favorites</span>
-              </button>
-            </li>
-            <li>
-              <NavLink to="/search" className={navLinkClass}>
-                <Search size={14} />
-                <span>Search</span>
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/sources" className={navLinkClass}>
-                <Database size={14} />
+                <span className="text-text-primary font-semibold">
+                  {favoritesCount}
+                </span>
+              </div>
+              <div className="flex justify-between text-nav text-text-secondary py-sm">
+                <span>Platforms</span>
+                <span className="text-text-primary font-semibold">
+                  {platformCount}
+                </span>
+              </div>
+              <div className="flex justify-between text-nav text-text-secondary py-sm">
+                <span>ROMs</span>
+                <span className="text-text-primary font-semibold">
+                  {romCount}
+                </span>
+              </div>
+              <div className="flex justify-between text-nav text-text-secondary py-sm">
                 <span>Sources</span>
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/settings" className={navLinkClass}>
-                <Settings size={14} />
-                <span>Settings</span>
-              </NavLink>
-            </li>
-          </ul>
-          <div className="border-t border-border p-xl font-mono">
-            <div className="text-label text-text-muted uppercase tracking-[1px] mb-lg">
-              // Collection
+                <span className="text-text-primary font-semibold">
+                  {sourceCount}
+                </span>
+              </div>
+              <div className="mt-lg text-badge text-accent font-semibold tracking-[1px] uppercase">
+                [synced]
+              </div>
             </div>
-            <div className="flex justify-between text-nav text-text-secondary py-sm">
-              <span>Favorites</span>
-              <span className="text-text-primary font-semibold">{favoritesCount}</span>
-            </div>
-            <div className="flex justify-between text-nav text-text-secondary py-sm">
-              <span>Platforms</span>
-              <span className="text-text-primary font-semibold">{platformCount}</span>
-            </div>
-            <div className="flex justify-between text-nav text-text-secondary py-sm">
-              <span>ROMs</span>
-              <span className="text-text-primary font-semibold">{romCount}</span>
-            </div>
-            <div className="flex justify-between text-nav text-text-secondary py-sm">
-              <span>Sources</span>
-              <span className="text-text-primary font-semibold">{sourceCount}</span>
-            </div>
-            <div className="mt-lg text-badge text-accent font-semibold tracking-[1px] uppercase">
-              [synced]
-            </div>
-          </div>
-        </nav>
-        <main className="flex-1 overflow-y-auto py-5xl px-6xl pt-[38px]">
-          <Outlet />
-        </main>
-      </div>
-      <Toast toasts={toasts} onRemove={removeToast} />
-    </SyncContext.Provider>
+          </nav>
+          <main className="flex-1 overflow-y-auto py-5xl px-6xl pt-[38px]">
+            <Outlet />
+          </main>
+        </div>
+        <Toast toasts={toasts} onRemove={removeToast} />
+      </SyncContext.Provider>
     </ToastContext.Provider>
   );
 }

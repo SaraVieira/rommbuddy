@@ -91,10 +91,10 @@ export default function RomDetailPage() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-screen -mx-6xl -mb-5xl -mt-[38px]">
       <LeftPanel rom={rom} />
 
-      <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-3xl p-[32px_40px]">
+      <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-3xl p-[32px_40px] pt-[38px]">
         <div className="flex items-center justify-between">
           <button
             className="flex items-center gap-md text-text-secondary font-mono text-label uppercase tracking-[0.5px] cursor-pointer bg-transparent border-none hover:text-text-primary"

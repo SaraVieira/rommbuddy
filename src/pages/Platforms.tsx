@@ -6,7 +6,6 @@ import type { PlatformWithCount } from "../types";
 import { getPlatformIcon } from "../utils/platformIcons";
 import {
   selectedPlatformAtom,
-  offsetAtom,
   searchInputAtom,
   searchAtom,
 } from "../store/library";
@@ -14,7 +13,6 @@ import {
 export default function Platforms() {
   const navigate = useNavigate();
   const setSelectedPlatform = useSetAtom(selectedPlatformAtom);
-  const setOffset = useSetAtom(offsetAtom);
   const setSearchInput = useSetAtom(searchInputAtom);
   const setSearch = useSetAtom(searchAtom);
 
@@ -46,7 +44,6 @@ export default function Platforms() {
 
   const handlePlatformClick = (platformId: number) => {
     setSelectedPlatform(platformId);
-    setOffset(0);
     setSearchInput("");
     setSearch("");
     navigate("/");
