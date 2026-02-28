@@ -279,7 +279,7 @@ impl RommClient {
                     slug: Set(canonical_slug.clone()),
                     name: Set(platform.display_name.clone()),
                     igdb_id: Set(None),
-                    screenscraper_id: Set(None),
+                    screenscraper_id: Set(platform_registry::ss_id(&canonical_slug).map(|id| id as i64)),
                     file_extensions: Set("[]".to_string()),
                     folder_aliases: Set("[]".to_string()),
                     created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
