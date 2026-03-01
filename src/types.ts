@@ -62,6 +62,17 @@ export interface DownloadProgress {
   error_message?: string;
 }
 
+export interface CachedFile {
+  file_name: string;
+  size: number;
+  last_played_at: string | null;
+}
+
+export interface CacheInfo {
+  total_size: number;
+  files: CachedFile[];
+}
+
 export interface CoreInfo {
   core_name: string;
   core_path: string;

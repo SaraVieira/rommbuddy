@@ -11,13 +11,22 @@ use tokio_util::sync::CancellationToken;
 use crate::error::{AppError, AppResult};
 use crate::platform_registry;
 use crate::models::{
-    AchievementData, ConnectionTestResult, CoreInfo, CoreMapping, DownloadProgress, EmulatorDef,
-    IgdbTestResult, LibraryPage, Platform, PlatformWithCount, RaTestResult,
-    RomWithMeta, SaveFileInfo, SavePathOverride, ScanProgress, SsTestResult, SourceConfig,
+    AchievementData, CacheInfo, CachedFile, ConnectionTestResult, CoreInfo, CoreMapping,
+    DownloadProgress, EmulatorDef, IgdbTestResult, LibraryPage, Platform, PlatformWithCount,
+    RaTestResult, RomWithMeta, SaveFileInfo, SavePathOverride, ScanProgress, SsTestResult,
+    SourceConfig,
 };
 use crate::saves;
 use crate::sources::local_sync;
 use crate::sources::romm::RommClient;
+
+pub(crate) fn rom_cache_dir() -> std::path::PathBuf {
+    directories::ProjectDirs::from("com", "romm-buddy", "romm-buddy")
+        .map_or_else(
+            || std::path::PathBuf::from("rom_cache"),
+            |p| p.cache_dir().join("rom_cache"),
+        )
+}
 
 struct EmulatorEntry {
     id: &'static str,
@@ -80,7 +89,7 @@ const EMULATOR_REGISTRY: &[EmulatorEntry] = &[
 fn build_emulator_args(emulator_type: &str, rom_path: &str) -> Vec<String> {
     match emulator_type {
         "dolphin" => vec![format!("--exec={rom_path}")],
-        "duckstation" | "pcsx2" => vec!["--".into(), rom_path.into()],
+        "duckstation" | "pcsx2" => vec![rom_path.into()],
         "cemu" => vec!["-g".into(), rom_path.into()],
         "xemu" => vec!["-dvd_path".into(), rom_path.into()],
         "rpcs3" => vec!["--no-gui".into(), rom_path.into()],
@@ -2526,4 +2535,105 @@ pub async fn read_file_base64(file_path: String) -> AppResult<String> {
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(&bytes)
     ))
+}
+
+// ── Cache Management ──
+
+#[tauri::command]
+pub async fn get_cache_info(db: State<'_, DatabaseConnection>) -> AppResult<CacheInfo> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    let cache_dir = rom_cache_dir();
+    let mut files = Vec::new();
+    let mut total_size: u64 = 0;
+
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if file_name.starts_with('.') && file_name.ends_with(".part") {
+                continue;
+            }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            total_size += size;
+
+            let last_played: Option<String> = db.inner()
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "SELECT MAX(l.last_played_at) as last_played_at
+                     FROM roms r JOIN library l ON l.rom_id = r.id
+                     WHERE r.file_name = ?",
+                    [file_name.clone().into()],
+                ))
+                .await
+                .ok()
+                .flatten()
+                .and_then(|row| row.try_get::<Option<String>>("", "last_played_at").ok())
+                .flatten();
+
+            files.push(CachedFile { file_name, size, last_played_at: last_played });
+        }
+    }
+
+    files.sort_by(|a, b| {
+        b.last_played_at.cmp(&a.last_played_at)
+            .then(b.size.cmp(&a.size))
+    });
+
+    Ok(CacheInfo { total_size, files })
+}
+
+#[tauri::command]
+pub async fn clear_all_cache() -> AppResult<()> {
+    let cache_dir = rom_cache_dir();
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                if name.starts_with('.') && name.ends_with(".part") {
+                    continue;
+                }
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_cache_files(file_names: Vec<String>) -> AppResult<()> {
+    let cache_dir = rom_cache_dir();
+    for file_name in &file_names {
+        if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+            continue;
+        }
+        let path = cache_dir.join(file_name);
+        if path.is_file() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_cache_eviction_days(app: tauri::AppHandle) -> AppResult<u32> {
+    let store = app.store("settings.json")
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(store.get("cache_eviction_days")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(7))
+}
+
+#[tauri::command]
+pub async fn set_cache_eviction_days(app: tauri::AppHandle, days: u32) -> AppResult<()> {
+    let store = app.store("settings.json")
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    store.set("cache_eviction_days", serde_json::json!(days));
+    store.save().map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(())
 }

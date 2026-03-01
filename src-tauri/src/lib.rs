@@ -14,6 +14,7 @@ mod saves;
 mod sources;
 
 use directories::ProjectDirs;
+use sea_orm::DatabaseConnection;
 use tauri::Manager;
 
 /// Run the Tauri application.
@@ -57,6 +58,14 @@ pub fn run() {
             app.manage(commands::CancelTokenMap(
                 tokio::sync::Mutex::new(std::collections::HashMap::new()),
             ));
+
+            // Spawn background cache eviction
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = evict_stale_cache(&app_handle).await {
+                    log::warn!("Cache eviction failed: {e}");
+                }
+            });
 
             Ok(())
         })
@@ -124,7 +133,78 @@ pub fn run() {
             commands::import_save_file,
             commands::read_file_base64,
             commands::get_all_registry_platforms,
+            commands::get_cache_info,
+            commands::clear_all_cache,
+            commands::clear_cache_files,
+            commands::get_cache_eviction_days,
+            commands::set_cache_eviction_days,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn evict_stale_cache(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    use tauri_plugin_store::StoreExt;
+
+    let cache_dir = commands::rom_cache_dir();
+    if !cache_dir.exists() {
+        return Ok(());
+    }
+
+    let store = app.store("settings.json")?;
+    let days = store.get("cache_eviction_days")
+        .and_then(|v: serde_json::Value| v.as_u64())
+        .unwrap_or(7);
+
+    let db = app.state::<DatabaseConnection>();
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+    let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    let entries: Vec<_> = std::fs::read_dir(&cache_dir)?
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .collect();
+
+    for entry in entries {
+        let path = entry.path();
+        let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+
+        if file_name.starts_with('.') && file_name.ends_with(".part") {
+            continue;
+        }
+
+        let last_played: Option<String> = db.inner()
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT MAX(l.last_played_at) as last_played_at
+                 FROM roms r JOIN library l ON l.rom_id = r.id
+                 WHERE r.file_name = ?",
+                [file_name.clone().into()],
+            ))
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.try_get::<Option<String>>("", "last_played_at").ok())
+            .flatten();
+
+        let should_evict = if let Some(ref played) = last_played {
+            played < &cutoff_str
+        } else {
+            entry.metadata()
+                .and_then(|m| m.modified())
+                .map(|t| {
+                    let modified: chrono::DateTime<chrono::Utc> = t.into();
+                    modified < cutoff
+                })
+                .unwrap_or(false)
+        };
+
+        if should_evict {
+            log::info!("Evicting stale cached ROM: {file_name}");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    Ok(())
 }

@@ -151,6 +151,19 @@ impl DownloadProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedFile {
+    pub file_name: String,
+    pub size: u64,
+    pub last_played_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheInfo {
+    pub total_size: u64,
+    pub files: Vec<CachedFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoreInfo {
     pub core_name: String,
     pub core_path: String,

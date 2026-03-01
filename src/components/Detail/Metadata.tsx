@@ -43,6 +43,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       icon: Database,
     },
   ].filter(Boolean) as { label: string; url: string; icon: typeof BookOpen }[];
+  console.log(rom.rating);
   return (
     <>
       <div className="flex bg-bg-card border border-border">
@@ -59,7 +60,9 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
             Rating
           </span>
           <span className="font-mono text-body font-semibold text-accent">
-            {rom.rating != null ? `${(rom.rating / 10).toFixed(1)} / 10` : "—"}
+            {rom.rating != null
+              ? `${((rom.rating * 10) / 5).toFixed(1)} / 10`
+              : "—"}
           </span>
         </div>
         <div className="flex-1 p-xl flex flex-col gap-sm border-l border-border">

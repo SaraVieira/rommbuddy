@@ -3,8 +3,9 @@ import RetroArchTab from "../components/settings/RetroArchTab";
 import EmulatorsTab from "../components/settings/EmulatorsTab";
 import IntegrationsTab from "../components/settings/IntegrationsTab";
 import DatFilesTab from "../components/settings/DatFilesTab";
+import StorageTab from "../components/settings/StorageTab";
 
-const TABS = ["retroarch", "emulators", "integrations", "dat"] as const;
+const TABS = ["retroarch", "emulators", "integrations", "dat", "storage"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -12,6 +13,7 @@ const TAB_LABELS: Record<Tab, string> = {
   emulators: "Emulators",
   integrations: "Integrations",
   dat: "Dat Files",
+  storage: "Storage",
 };
 
 export default function Settings() {
@@ -46,6 +48,7 @@ export default function Settings() {
       {activeTab === "emulators" && <EmulatorsTab />}
       {activeTab === "integrations" && <IntegrationsTab />}
       {activeTab === "dat" && <DatFilesTab />}
+      {activeTab === "storage" && <StorageTab />}
     </div>
   );
 }
