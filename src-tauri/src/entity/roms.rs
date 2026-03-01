@@ -1,6 +1,19 @@
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use super::json_vec::JsonVec;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationStatus {
+    #[sea_orm(string_value = "verified")]
+    Verified,
+    #[sea_orm(string_value = "unverified")]
+    Unverified,
+    #[sea_orm(string_value = "bad_dump")]
+    BadDump,
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "roms")]
@@ -18,7 +31,7 @@ pub struct Model {
     pub regions: JsonVec,
     #[sea_orm(column_type = "Text")]
     pub languages: JsonVec,
-    pub verification_status: Option<String>,
+    pub verification_status: Option<VerificationStatus>,
     pub dat_entry_id: Option<i64>,
     pub dat_game_name: Option<String>,
     pub created_at: String,

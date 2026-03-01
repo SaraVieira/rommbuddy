@@ -22,7 +22,7 @@ struct RomRow {
     platform_slug: String,
     has_cover: i64,
     hash_md5: Option<String>,
-    source_type: Option<String>,
+    source_type: Option<crate::entity::sources::SourceType>,
     source_rom_id: Option<String>,
     screenscraper_id: Option<i64>,
 }
@@ -39,7 +39,6 @@ async fn query_hasheous_igdb_id(db: &DatabaseConnection, rom_id: i64) -> Option<
         .ok()
         .flatten()
         .and_then(|m| m.igdb_game_id)
-        .and_then(|s| s.parse::<i64>().ok())
 }
 
 /// Compute MD5 for a ROM file if not already stored.
@@ -54,7 +53,7 @@ async fn compute_md5_if_needed(db: &DatabaseConnection, rom: &RomRow) -> Option<
     }
 
     // Determine file path
-    let file_path = if rom.source_type.as_deref() == Some("local") {
+    let file_path = if rom.source_type == Some(crate::entity::sources::SourceType::Local) {
         rom.source_rom_id.as_ref().map(PathBuf::from)?
     } else {
         // For remote sources, check download cache

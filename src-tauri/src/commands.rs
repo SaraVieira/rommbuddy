@@ -134,10 +134,7 @@ pub async fn get_sources(db: State<'_, DatabaseConnection>) -> AppResult<Vec<Sou
         .map(|m| SourceConfig {
             id: m.id,
             name: m.name,
-            source_type: match m.source_type.as_str() {
-                "romm" => crate::models::SourceType::Romm,
-                _ => crate::models::SourceType::Local,
-            },
+            source_type: m.source_type,
             url: m.url,
             enabled: m.enabled,
             last_synced_at: m.last_synced_at,
@@ -172,7 +169,7 @@ pub async fn test_local_path(path: String) -> AppResult<ConnectionTestResult> {
 pub async fn add_source(
     db: State<'_, DatabaseConnection>,
     name: String,
-    source_type: String,
+    source_type: crate::entity::sources::SourceType,
     url: Option<String>,
     credentials_json: String,
 ) -> AppResult<i64> {
@@ -298,8 +295,8 @@ pub async fn sync_source(
 
     let db_ref = db.inner();
 
-    let result = match source_type.as_str() {
-        "local" => {
+    let result = match source_type {
+        crate::entity::sources::SourceType::Local => {
             let creds: HashMap<String, String> =
                 serde_json::from_str(&credentials).map_err(|e| AppError::Other(e.to_string()))?;
             let path = creds
@@ -312,7 +309,7 @@ pub async fn sync_source(
             }, cancel)
             .await
         }
-        "romm" => {
+        crate::entity::sources::SourceType::Romm => {
             let url = url_opt.ok_or_else(|| {
                 AppError::Other("Source has no URL configured".to_string())
             })?;
@@ -331,9 +328,6 @@ pub async fn sync_source(
                 let _ = channel.send(progress);
             }, cancel)
             .await
-        }
-        other => {
-            Err(AppError::Other(format!("Unknown source type: {other}")))
         }
     };
 
@@ -377,9 +371,9 @@ struct RomWithMetaRow {
     thegamesdb_game_id: Option<String>,
     source_id: i64,
     source_rom_id: Option<String>,
-    source_type: Option<String>,
+    source_type: Option<crate::entity::sources::SourceType>,
     favorite: i64,
-    verification_status: Option<String>,
+    verification_status: Option<crate::entity::roms::VerificationStatus>,
     dat_game_name: Option<String>,
 }
 
@@ -1063,7 +1057,7 @@ pub async fn download_and_launch(
         file_size: Option<i64>,
         platform_id: i64,
         source_rom_id: String,
-        source_type: String,
+        source_type: crate::entity::sources::SourceType,
     }
 
     // 1. Get ROM info + source type (try exact source_id first, fall back to any source)
@@ -1149,7 +1143,7 @@ pub async fn download_and_launch(
     };
 
     // 4. Determine ROM path -- local sources use the file directly, remote sources download
-    let rom_path = if source_type == "local" {
+    let rom_path = if source_type == crate::entity::sources::SourceType::Local {
         let path = std::path::PathBuf::from(&source_rom_id);
         if !path.exists() {
             return Err(AppError::Other(format!(
@@ -1247,7 +1241,7 @@ pub async fn download_and_launch(
 
     if is_retroarch {
         log::info!(
-            "Launching RetroArch: ra_path={ra_path}, core_path={core_path}, rom_path={rom_path_str}, source_type={source_type}",
+            "Launching RetroArch: ra_path={ra_path}, core_path={core_path}, rom_path={rom_path_str}, source_type={source_type:?}",
         );
 
         // On macOS, .app binaries must be launched via `open` to work properly with LaunchServices.
@@ -1607,7 +1601,7 @@ async fn compute_rom_hash_inner(
     struct RomInfoRow {
         file_name: String,
         source_rom_id: String,
-        source_type: String,
+        source_type: crate::entity::sources::SourceType,
         source_id: i64,
     }
     let info = RomInfoRow::find_by_statement(Statement::from_sql_and_values(
@@ -1622,7 +1616,7 @@ async fn compute_rom_hash_inner(
     let (file_name, source_rom_id, source_type, source_id) =
         (info.file_name, info.source_rom_id, info.source_type, info.source_id);
 
-    if source_type == "local" {
+    if source_type == crate::entity::sources::SourceType::Local {
         // Local: hash the file directly (extract from zip if needed)
         let path = std::path::PathBuf::from(&source_rom_id);
         if !path.exists() {
@@ -1987,7 +1981,7 @@ pub async fn get_achievements(
 pub struct RomSource {
     pub source_id: i64,
     pub source_name: String,
-    pub source_type: String,
+    pub source_type: crate::entity::sources::SourceType,
     pub source_rom_id: Option<String>,
     pub source_url: Option<String>,
     pub file_name: Option<String>,
@@ -2583,26 +2577,38 @@ pub async fn get_cache_info(db: State<'_, DatabaseConnection>) -> AppResult<Cach
     .await
     .map_err(|e| AppError::Other(format!("Task join error: {e}")))?;
 
+    // Batch query: get last_played_at for all cached file names in one query
+    let mut last_played_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if !file_entries.is_empty() {
+        let placeholders: String = file_entries.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let values: Vec<sea_orm::Value> = file_entries.iter().map(|(name, _)| name.clone().into()).collect();
+        let sql = format!(
+            "SELECT r.file_name, MAX(l.last_played_at) as last_played_at \
+             FROM roms r JOIN library l ON l.rom_id = r.id \
+             WHERE r.file_name IN ({placeholders}) \
+             GROUP BY r.file_name"
+        );
+        if let Ok(rows) = db.inner()
+            .query_all(Statement::from_sql_and_values(DatabaseBackend::Sqlite, &sql, values))
+            .await
+        {
+            for row in rows {
+                if let (Ok(name), Ok(Some(played))) = (
+                    row.try_get::<String>("", "file_name"),
+                    row.try_get::<Option<String>>("", "last_played_at"),
+                ) {
+                    last_played_map.insert(name, played);
+                }
+            }
+        }
+    }
+
     let mut files = Vec::new();
     let mut total_size: u64 = 0;
 
     for (file_name, size) in file_entries {
         total_size += size;
-
-        let last_played: Option<String> = db.inner()
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "SELECT MAX(l.last_played_at) as last_played_at
-                 FROM roms r JOIN library l ON l.rom_id = r.id
-                 WHERE r.file_name = ?",
-                [file_name.clone().into()],
-            ))
-            .await
-            .ok()
-            .flatten()
-            .and_then(|row| row.try_get::<Option<String>>("", "last_played_at").ok())
-            .flatten();
-
+        let last_played = last_played_map.remove(&file_name);
         files.push(CachedFile { file_name, size, last_played_at: last_played });
     }
 

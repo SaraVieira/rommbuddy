@@ -1,5 +1,12 @@
 use sea_orm::DatabaseConnection;
 
+/// Extract a numeric ID from a `serde_json::Value` (handles both JSON numbers and strings).
+fn extract_id_i64(value: &serde_json::Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+}
+
 /// Extract an ID value from a `serde_json::Value`, returning it as a String
 /// whether it was stored as a string or a number.
 fn extract_id_string(value: &serde_json::Value) -> String {
@@ -14,11 +21,11 @@ pub struct HasheousResult {
     pub year: Option<String>,
     pub description: Option<String>,
     pub genres: Vec<String>,
-    pub igdb_game_id: Option<String>,
-    pub igdb_platform_id: Option<String>,
-    pub thegamesdb_game_id: Option<String>,
-    pub retroachievements_game_id: Option<String>,
-    pub retroachievements_platform_id: Option<String>,
+    pub igdb_game_id: Option<i64>,
+    pub igdb_platform_id: Option<i64>,
+    pub thegamesdb_game_id: Option<i64>,
+    pub retroachievements_game_id: Option<i64>,
+    pub retroachievements_platform_id: Option<i64>,
     pub wikipedia_url: Option<String>,
     pub raw_response: String,
 }
@@ -79,14 +86,13 @@ pub async fn lookup_by_md5(client: &reqwest::Client, md5: &str) -> Option<Hasheo
         for entry in metadata {
             let source = entry.get("source").and_then(serde_json::Value::as_str).unwrap_or("");
             let object_type = entry.get("objectType").and_then(serde_json::Value::as_str).unwrap_or("");
-            let id_val = entry.get("id").map(extract_id_string);
 
             match (source, object_type) {
-                ("IGDB", "Game") => igdb_game_id = id_val,
-                ("TheGamesDb", "Game") => thegamesdb_game_id = id_val,
-                ("RetroAchievements", "Game") => retroachievements_game_id = id_val,
+                ("IGDB", "Game") => igdb_game_id = entry.get("id").and_then(extract_id_i64),
+                ("TheGamesDb", "Game") => thegamesdb_game_id = entry.get("id").and_then(extract_id_i64),
+                ("RetroAchievements", "Game") => retroachievements_game_id = entry.get("id").and_then(extract_id_i64),
                 ("Wikipedia", _) => {
-                    wikipedia_url = id_val;
+                    wikipedia_url = entry.get("id").map(extract_id_string);
                 }
                 _ => {}
             }
@@ -97,10 +103,9 @@ pub async fn lookup_by_md5(client: &reqwest::Client, md5: &str) -> Option<Hasheo
     if let Some(platform_meta) = v.pointer("/platform/metadata").and_then(serde_json::Value::as_array) {
         for entry in platform_meta {
             let source = entry.get("source").and_then(serde_json::Value::as_str).unwrap_or("");
-            let id_val = entry.get("id").map(extract_id_string);
             match source {
-                "IGDB" => igdb_platform_id = id_val,
-                "RetroAchievements" => retroachievements_platform_id = id_val,
+                "IGDB" => igdb_platform_id = entry.get("id").and_then(extract_id_i64),
+                "RetroAchievements" => retroachievements_platform_id = entry.get("id").and_then(extract_id_i64),
                 _ => {}
             }
         }
@@ -187,11 +192,11 @@ pub async fn save_to_cache(db: &DatabaseConnection, rom_id: i64, result: &Hasheo
                 result.year.clone().into(),
                 result.description.clone().into(),
                 genres_json.into(),
-                result.igdb_game_id.clone().into(),
-                result.igdb_platform_id.clone().into(),
-                result.thegamesdb_game_id.clone().into(),
-                result.retroachievements_game_id.clone().into(),
-                result.retroachievements_platform_id.clone().into(),
+                result.igdb_game_id.into(),
+                result.igdb_platform_id.into(),
+                result.thegamesdb_game_id.into(),
+                result.retroachievements_game_id.into(),
+                result.retroachievements_platform_id.into(),
                 result.wikipedia_url.clone().into(),
                 result.raw_response.clone().into(),
             ],

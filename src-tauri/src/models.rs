@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub use crate::entity::roms::VerificationStatus;
+pub use crate::entity::sources::SourceType;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Platform {
     pub id: i64,
@@ -20,13 +23,6 @@ pub struct SourceConfig {
     pub last_synced_at: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SourceType {
-    Local,
-    Romm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,13 +55,13 @@ pub struct RomWithMeta {
     pub screenshot_urls: Vec<String>,
     pub source_id: i64,
     pub source_rom_id: Option<String>,
-    pub source_type: Option<String>,
+    pub source_type: Option<SourceType>,
     pub retroachievements_game_id: Option<String>,
     pub wikipedia_url: Option<String>,
     pub igdb_id: Option<i64>,
     pub thegamesdb_game_id: Option<String>,
     pub favorite: bool,
-    pub verification_status: Option<String>,
+    pub verification_status: Option<VerificationStatus>,
     pub dat_game_name: Option<String>,
 }
 

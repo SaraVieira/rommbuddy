@@ -191,7 +191,12 @@ export default function App() {
               </div>
             </div>
           </nav>
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto relative">
+            <div
+              data-tauri-drag-region
+              className="fixed top-0 right-0 h-[38px] z-50"
+              style={{ left: "var(--width-sidebar)" }}
+            />
             {syncState.syncing && syncState.progress && (
               <OperationProgressBanner
                 label="Syncing"

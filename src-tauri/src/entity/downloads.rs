@@ -1,4 +1,19 @@
 use sea_orm::entity::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadStatus {
+    #[sea_orm(string_value = "pending")]
+    Pending,
+    #[sea_orm(string_value = "downloading")]
+    Downloading,
+    #[sea_orm(string_value = "completed")]
+    Completed,
+    #[sea_orm(string_value = "failed")]
+    Failed,
+}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "downloads")]
@@ -7,7 +22,7 @@ pub struct Model {
     pub id: i64,
     pub rom_id: i64,
     pub source_id: i64,
-    pub status: String,
+    pub status: DownloadStatus,
     pub progress: f64,
     pub file_path: Option<String>,
     pub error_message: Option<String>,
