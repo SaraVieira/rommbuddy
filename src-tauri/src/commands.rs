@@ -9,6 +9,7 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, AppResult};
+use crate::platform_registry;
 use crate::models::{
     AchievementData, ConnectionTestResult, CoreInfo, CoreMapping, DownloadProgress, EmulatorDef,
     IgdbTestResult, LibraryPage, Platform, PlatformWithCount, RaTestResult,
@@ -695,6 +696,14 @@ pub async fn get_platforms_with_counts(
             rom_count: r.rom_count,
         })
         .collect())
+}
+
+#[tauri::command]
+pub fn get_all_registry_platforms() -> Vec<(String, String)> {
+    platform_registry::PLATFORMS
+        .iter()
+        .map(|p| (p.slug.to_string(), p.display_name.to_string()))
+        .collect()
 }
 
 #[tauri::command]

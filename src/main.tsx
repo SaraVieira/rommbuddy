@@ -8,6 +8,7 @@ import Search from "./pages/Search";
 import Sources from "./pages/Sources";
 import Settings from "./pages/Settings";
 import RomDetailPage from "./pages/RomDetailPage";
+import DebugIcons from "./pages/DebugIcons";
 import "./index.css";
 
 const router = createHashRouter([
@@ -21,6 +22,7 @@ const router = createHashRouter([
       { path: "sources", element: <Sources /> },
       { path: "settings", element: <Settings /> },
       { path: "rom/:id", element: <RomDetailPage /> },
+      { path: "debug/icons", element: <DebugIcons /> },
     ],
   },
 ]);

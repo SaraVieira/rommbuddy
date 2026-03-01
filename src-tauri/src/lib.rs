@@ -122,6 +122,7 @@ pub fn run() {
             commands::export_save_file,
             commands::import_save_file,
             commands::read_file_base64,
+            commands::get_all_registry_platforms,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
