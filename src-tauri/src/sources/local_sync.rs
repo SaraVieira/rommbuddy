@@ -156,7 +156,9 @@ fn resolve_folder_to_slug(folder_name: &str, layout: &FolderLayout) -> Option<St
 fn is_rom_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| ROM_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .is_some_and(|ext| {
+            ROM_EXTENSIONS.iter().any(|&known| known.eq_ignore_ascii_case(ext))
+        })
 }
 
 /// Get the actual root for ROM folders depending on layout.

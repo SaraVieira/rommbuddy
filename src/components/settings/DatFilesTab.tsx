@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useAtomValue } from "jotai";
 import type {
-  PlatformWithCount,
   ScanProgress,
   DatFileInfo,
   DatDetectResult,
   VerificationStats,
 } from "../../types";
 import { toast } from "sonner";
-import ProgressBar from "./ProgressBar";
+import ProgressBar from "../ProgressBar";
 import PlatformDialog from "./PlatformDialog";
+import { platformsAtom } from "../../store/platforms";
 
 export default function DatFilesTab() {
-  const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
+  const platforms = useAtomValue(platformsAtom);
   const [datFiles, setDatFiles] = useState<DatFileInfo[]>([]);
   const [importingDat, setImportingDat] = useState(false);
   const [datProgress, setDatProgress] = useState<ScanProgress | null>(null);
@@ -26,15 +27,6 @@ export default function DatFilesTab() {
   const [pendingDatPath, setPendingDatPath] = useState<string | null>(null);
   const [pendingDatHeaderName, setPendingDatHeaderName] = useState("");
 
-  const loadPlatforms = useCallback(async () => {
-    try {
-      const p: PlatformWithCount[] = await invoke("get_platforms_with_counts");
-      setPlatforms(p);
-    } catch (e) {
-      console.error("Failed to load platforms:", e);
-    }
-  }, []);
-
   const loadDatFiles = useCallback(async () => {
     try {
       const files: DatFileInfo[] = await invoke("get_dat_files");
@@ -45,9 +37,8 @@ export default function DatFilesTab() {
   }, []);
 
   useEffect(() => {
-    loadPlatforms();
     loadDatFiles();
-  }, [loadPlatforms, loadDatFiles]);
+  }, [loadDatFiles]);
 
   const doImportDat = async (filePath: string, platformSlug: string) => {
     setImportingDat(true);
@@ -163,7 +154,7 @@ export default function DatFilesTab() {
               imported
             </span>
           </div>
-          {datProgress && <ProgressBar progress={datProgress} />}
+          {datProgress && <ProgressBar current={datProgress.current} total={datProgress.total} currentItem={datProgress.current_item} />}
           {datFiles.length > 0 && (
             <table className="w-full border-collapse">
               <thead>
@@ -227,7 +218,7 @@ export default function DatFilesTab() {
           >
             {verifying ? "Verifying..." : "Verify Library"}
           </button>
-          {verifyProgress && <ProgressBar progress={verifyProgress} />}
+          {verifyProgress && <ProgressBar current={verifyProgress.current} total={verifyProgress.total} currentItem={verifyProgress.current_item} />}
         </div>
       </section>
 

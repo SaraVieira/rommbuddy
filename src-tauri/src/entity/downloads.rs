@@ -16,6 +16,31 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::roms::Entity",
+        from = "Column::RomId",
+        to = "super::roms::Column::Id"
+    )]
+    Rom,
+    #[sea_orm(
+        belongs_to = "super::sources::Entity",
+        from = "Column::SourceId",
+        to = "super::sources::Column::Id"
+    )]
+    Source,
+}
+
+impl Related<super::roms::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Rom.def()
+    }
+}
+
+impl Related<super::sources::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Source.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

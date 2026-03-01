@@ -12,7 +12,7 @@ pub struct Model {
     pub credentials: String,
     #[sea_orm(column_type = "Text")]
     pub settings: String,
-    pub enabled: i32,
+    pub enabled: bool,
     pub last_synced_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,

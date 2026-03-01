@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useAtomValue } from "jotai";
 import type {
-  PlatformWithCount,
   CoreInfo,
   CoreMapping,
   EmulatorDef,
@@ -11,12 +11,13 @@ import { toast } from "sonner";
 import CoreMappings from "./CoreMappings";
 import InstallCores from "./InstallCores";
 import { DEFAULT_CORES } from "../../utils/defaultCores";
+import { platformsAtom } from "../../store/platforms";
 
 export default function RetroArchTab() {
   const [retroarchPath, setRetroarchPath] = useState("");
   const [pathValid, setPathValid] = useState(false);
   const [cores, setCores] = useState<CoreInfo[]>([]);
-  const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
+  const platforms = useAtomValue(platformsAtom);
   const [mappings, setMappings] = useState<CoreMapping[]>([]);
   const [emulators, setEmulators] = useState<EmulatorDef[]>([]);
   const [emulatorPaths, setEmulatorPaths] = useState<Record<string, string>>(
@@ -43,8 +44,6 @@ export default function RetroArchTab() {
     try {
       const m: CoreMapping[] = await invoke("get_core_mappings");
       setMappings(m);
-      const p: PlatformWithCount[] = await invoke("get_platforms_with_counts");
-      setPlatforms(p);
     } catch (e) {
       console.error("Failed to load mappings:", e);
     }

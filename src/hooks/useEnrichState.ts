@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-import { toast } from "sonner";
+import { useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAsyncOperation, createProgressChannel } from "./useAsyncOperation";
 import type { ScanProgress } from "../types";
 
 export interface EnrichState {
@@ -11,47 +11,41 @@ export interface EnrichState {
 }
 
 export function useEnrichState(onComplete?: () => void): EnrichState {
-  const [enriching, setEnriching] = useState(false);
-  const [progress, setProgress] = useState<ScanProgress | null>(null);
-  const enrichingRef = useRef(false);
-
-  const startEnrich = useCallback(
-    async (platformId: number | null, search: string | null) => {
-      if (enrichingRef.current) return;
-      enrichingRef.current = true;
-      setEnriching(true);
-      setProgress(null);
-      try {
+  const config = useMemo(
+    () => ({
+      run: async (
+        setProgress: (p: ScanProgress) => void,
+        platformId: number | null,
+        search: string | null,
+      ) => {
         const hasDb: boolean = await invoke("has_launchbox_db");
         if (!hasDb) {
-          const dlChannel = new Channel<ScanProgress>();
-          dlChannel.onmessage = (p) => setProgress(p);
+          const dlChannel = createProgressChannel(setProgress);
           await invoke("update_launchbox_db", { channel: dlChannel });
         }
-
-        const channel = new Channel<ScanProgress>();
-        channel.onmessage = (p) => setProgress(p);
+        const channel = createProgressChannel(setProgress);
         await invoke("fetch_metadata", {
           platformId,
           search: search || null,
           channel,
         });
-        toast.success("Metadata enrichment complete!");
-        onComplete?.();
-      } catch (e) {
-        toast.error(`Metadata enrichment failed: ${e}`);
-      } finally {
-        enrichingRef.current = false;
-        setEnriching(false);
-        setProgress(null);
-      }
-    },
+      },
+      cancel: async () => {
+        await invoke("cancel_metadata");
+      },
+      successMessage: "Metadata enrichment complete!",
+      errorPrefix: "Metadata enrichment failed",
+      onComplete,
+    }),
     [onComplete],
   );
 
-  const cancelEnrich = useCallback(async () => {
-    await invoke("cancel_metadata");
-  }, []);
+  const op = useAsyncOperation<[number | null, string | null], []>(config);
 
-  return { enriching, progress, startEnrich, cancelEnrich };
+  return {
+    enriching: op.running,
+    progress: op.progress,
+    startEnrich: op.start,
+    cancelEnrich: op.cancel,
+  };
 }

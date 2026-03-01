@@ -32,15 +32,8 @@ export function SaveFiles({
   };
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    (async () => {
-      await fetchSaves();
-      if (!cancelled) setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    fetchSaves().finally(() => setLoading(false));
   }, [romId]);
 
   const handleDelete = async (sf: SaveFileInfo) => {

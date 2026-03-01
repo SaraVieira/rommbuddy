@@ -139,7 +139,7 @@ pub async fn get_sources(db: State<'_, DatabaseConnection>) -> AppResult<Vec<Sou
                 _ => crate::models::SourceType::Local,
             },
             url: m.url,
-            enabled: m.enabled != 0,
+            enabled: m.enabled,
             last_synced_at: m.last_synced_at,
             created_at: m.created_at.parse().unwrap_or_default(),
             updated_at: m.updated_at.parse().unwrap_or_default(),
@@ -186,7 +186,7 @@ pub async fn add_source(
         url: Set(url),
         credentials: Set(credentials_json),
         settings: Set("{}".to_string()),
-        enabled: Set(1),
+        enabled: Set(true),
         last_synced_at: Set(None),
         created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
         updated_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
@@ -739,7 +739,10 @@ pub async fn proxy_image(
 
     if let Some((base_url, credentials)) = row {
         let creds: HashMap<String, String> =
-            serde_json::from_str(&credentials).unwrap_or_default();
+            serde_json::from_str(&credentials).unwrap_or_else(|e| {
+                log::warn!("Failed to parse credentials JSON: {e}");
+                HashMap::new()
+            });
         let username = creds.get("username").cloned().unwrap_or_default();
         let password = creds.get("password").cloned().unwrap_or_default();
         let client = RommClient::new(base_url, username, password);
@@ -1000,7 +1003,7 @@ pub async fn get_core_mappings(db: State<'_, DatabaseConnection>) -> AppResult<V
             platform_id: m.platform_id,
             core_name: m.core_name,
             core_path: m.core_path,
-            is_default: m.is_default != 0,
+            is_default: m.is_default,
             emulator_type: m.emulator_type,
         })
         .collect())
@@ -1180,7 +1183,10 @@ pub async fn download_and_launch(
             let (base_url, credentials) = (cred_row.url, cred_row.credentials);
 
             let creds: std::collections::HashMap<String, String> =
-                serde_json::from_str(&credentials).unwrap_or_default();
+                serde_json::from_str(&credentials).unwrap_or_else(|e| {
+                log::warn!("Failed to parse credentials JSON: {e}");
+                HashMap::new()
+            });
             let username = creds.get("username").cloned().unwrap_or_default();
             let password = creds.get("password").cloned().unwrap_or_default();
 
@@ -1622,29 +1628,10 @@ async fn compute_rom_hash_inner(
         if !path.exists() {
             return Err(AppError::Other("ROM file not found on disk".into()));
         }
-        let hash = tokio::task::spawn_blocking(move || -> Result<String, String> {
-            use md5::{Digest, Md5};
-            let lower = path.to_string_lossy().to_lowercase();
-            if lower.ends_with(".zip") {
-                let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-                let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-                if archive.is_empty() {
-                    return Err("Empty zip archive".into());
-                }
-                let mut inner = archive.by_index(0).map_err(|e| e.to_string())?;
-                let mut hasher = Md5::new();
-                std::io::copy(&mut inner, &mut hasher).map_err(|e| e.to_string())?;
-                Ok(format!("{:x}", hasher.finalize()))
-            } else {
-                let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-                let mut hasher = Md5::new();
-                std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
-                Ok(format!("{:x}", hasher.finalize()))
-            }
-        })
-        .await
-        .map_err(|e| AppError::Other(e.to_string()))?
-        .map_err(|e| AppError::Other(format!("Failed to compute hash: {e}")))?;
+        let hash = tokio::task::spawn_blocking(move || crate::hash::compute_md5(&path))
+            .await
+            .map_err(|e| AppError::Other(e.to_string()))?
+            .map_err(|e| AppError::Other(format!("Failed to compute hash: {e}")))?;
 
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
@@ -1677,7 +1664,10 @@ async fn compute_rom_hash_inner(
     let (base_url, credentials) = (creds_row.url, creds_row.credentials);
 
     let creds: std::collections::HashMap<String, String> =
-        serde_json::from_str(&credentials).unwrap_or_default();
+        serde_json::from_str(&credentials).unwrap_or_else(|e| {
+            log::warn!("Failed to parse credentials JSON: {e}");
+            std::collections::HashMap::new()
+        });
     let username = creds.get("username").cloned().unwrap_or_default();
     let password = creds.get("password").cloned().unwrap_or_default();
 
@@ -1707,33 +1697,10 @@ async fn compute_rom_hash_inner(
 
     // Compute hash — extract from zip/7z if needed (RA expects uncompressed ROM hash)
     let hash_path = tmp_path.clone();
-    let hash = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        use md5::{Digest, Md5};
-
-        let lower = hash_path.to_string_lossy().to_lowercase();
-        if lower.ends_with(".zip") {
-            // Extract first file from zip, hash that
-            let file = std::fs::File::open(&hash_path).map_err(|e| e.to_string())?;
-            let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-            if archive.is_empty() {
-                return Err("Empty zip archive".into());
-            }
-            let mut inner = archive.by_index(0).map_err(|e| e.to_string())?;
-            log::info!("[RA] Hashing inner zip entry: {}", inner.name());
-            let mut hasher = Md5::new();
-            std::io::copy(&mut inner, &mut hasher).map_err(|e| e.to_string())?;
-            Ok(format!("{:x}", hasher.finalize()))
-        } else {
-            // Hash file directly
-            let mut f = std::fs::File::open(&hash_path).map_err(|e| e.to_string())?;
-            let mut hasher = Md5::new();
-            std::io::copy(&mut f, &mut hasher).map_err(|e| e.to_string())?;
-            Ok(format!("{:x}", hasher.finalize()))
-        }
-    })
-    .await
-    .map_err(|e| AppError::Other(e.to_string()))?
-    .map_err(|e| AppError::Other(format!("Failed to compute hash: {e}")))?;
+    let hash = tokio::task::spawn_blocking(move || crate::hash::compute_md5(&hash_path))
+        .await
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .map_err(|e| AppError::Other(format!("Failed to compute hash: {e}")))?;
 
     // Delete temp file
     let _ = tokio::fs::remove_file(&tmp_path).await;
@@ -2566,8 +2533,22 @@ pub async fn read_file_base64(file_path: String) -> AppResult<String> {
     let bytes = tokio::fs::read(&file_path)
         .await
         .map_err(|e| AppError::Other(format!("Failed to read file: {e}")))?;
+    let content_type = match std::path::Path::new(&file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
+    };
     Ok(format!(
-        "data:image/png;base64,{}",
+        "data:{content_type};base64,{}",
         base64::engine::general_purpose::STANDARD.encode(&bytes)
     ))
 }

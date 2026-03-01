@@ -30,38 +30,30 @@ fn encode_uri_component(s: &str) -> String {
     result
 }
 
-/// Build a libretro thumbnail URL for the given platform slug and game name.
+/// Build a libretro thumbnail URL for the given platform, game name, and category.
 /// Returns `None` if the platform is not in the slug map.
+fn build_url(platform_slug: &str, game_name: &str, category: &str) -> Option<String> {
+    let system = platform_registry::libretro_dir(platform_slug)?;
+    let sanitized = sanitize_name(game_name);
+    Some(format!(
+        "https://thumbnails.libretro.com/{}/{}/{}.png",
+        encode_uri_component(system),
+        category,
+        encode_uri_component(&sanitized)
+    ))
+}
+
+/// Build a libretro boxart/cover thumbnail URL.
 pub fn build_thumbnail_url(platform_slug: &str, game_name: &str) -> Option<String> {
-    let system = platform_registry::libretro_dir(platform_slug)?;
-    let sanitized = sanitize_name(game_name);
-    Some(format!(
-        "https://thumbnails.libretro.com/{}/Named_Boxarts/{}.png",
-        encode_uri_component(system),
-        encode_uri_component(&sanitized)
-    ))
+    build_url(platform_slug, game_name, "Named_Boxarts")
 }
 
-/// Build a libretro in-game snapshot URL for the given platform slug and game name.
-/// Returns `None` if the platform is not in the slug map.
+/// Build a libretro in-game snapshot URL.
 pub fn build_snapshot_url(platform_slug: &str, game_name: &str) -> Option<String> {
-    let system = platform_registry::libretro_dir(platform_slug)?;
-    let sanitized = sanitize_name(game_name);
-    Some(format!(
-        "https://thumbnails.libretro.com/{}/Named_Snaps/{}.png",
-        encode_uri_component(system),
-        encode_uri_component(&sanitized)
-    ))
+    build_url(platform_slug, game_name, "Named_Snaps")
 }
 
-/// Build a libretro title screen URL for the given platform slug and game name.
-/// Returns `None` if the platform is not in the slug map.
+/// Build a libretro title screen URL.
 pub fn build_title_url(platform_slug: &str, game_name: &str) -> Option<String> {
-    let system = platform_registry::libretro_dir(platform_slug)?;
-    let sanitized = sanitize_name(game_name);
-    Some(format!(
-        "https://thumbnails.libretro.com/{}/Named_Titles/{}.png",
-        encode_uri_component(system),
-        encode_uri_component(&sanitized)
-    ))
+    build_url(platform_slug, game_name, "Named_Titles")
 }

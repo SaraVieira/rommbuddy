@@ -10,7 +10,7 @@ pub struct Model {
     pub file_path: Option<String>,
     pub play_count: i32,
     pub last_played_at: Option<String>,
-    pub favorite: i32,
+    pub favorite: bool,
     pub created_at: String,
     pub updated_at: String,
 }

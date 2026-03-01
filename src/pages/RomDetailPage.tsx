@@ -13,6 +13,7 @@ import { FileInfo } from "@/components/detail/FileInfo";
 import { LeftPanel } from "@/components/detail/Left";
 import { useLaunchRom } from "../hooks/useLaunchRom";
 import { useAchievements } from "../hooks/useAchievements";
+import { useAsyncInvoke } from "../hooks/useAsyncInvoke";
 
 export default function RomDetailPage() {
   const location = useLocation();
@@ -21,31 +22,18 @@ export default function RomDetailPage() {
   const initialRom = location.state?.rom as RomWithMeta | undefined;
 
   const [rom, setRom] = useState<RomWithMeta | undefined>(initialRom);
-  const [loadingRom, setLoadingRom] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [hasCore, setHasCore] = useState(true);
 
+  const { data: fetchedRom, loading: loadingRom } = useAsyncInvoke(
+    () => invoke<RomWithMeta>("get_rom", { romId: Number(id) }),
+    [id],
+    { enabled: !initialRom && !!id },
+  );
+
   useEffect(() => {
-    if (initialRom || !id) return;
-    let cancelled = false;
-    setLoadingRom(true);
-    (async () => {
-      try {
-        const fetched = await invoke<RomWithMeta>("get_rom", {
-          romId: Number(id),
-        });
-        if (!cancelled) setRom(fetched);
-      } catch (e) {
-        console.error("Failed to load ROM:", e);
-        if (!cancelled) toast.error(String(e));
-      } finally {
-        if (!cancelled) setLoadingRom(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, initialRom]);
+    if (fetchedRom) setRom(fetchedRom);
+  }, [fetchedRom]);
 
   const platformId = rom?.platform_id;
   useEffect(() => {

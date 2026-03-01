@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { SourceConfig, ConnectionTestResult } from "../../types";
+import type { ConnectionTestResult } from "../../types";
 import { useAtomValue } from "jotai";
 import {
   rommNameAtom,
@@ -10,8 +10,8 @@ import {
   rommUsernameAtom,
 } from "@/store/sources";
 import { useAppSync } from "@/App";
-import { toast } from "sonner";
 import SourceConnected from "./SourceConnected";
+import { useSourceSave } from "./useSourceSave";
 
 interface Props {
   onReload: () => Promise<void>;
@@ -49,27 +49,17 @@ export default function RommSourceSection({ onReload }: Props) {
     }
   };
 
-  const handleSave = async () => {
-    const credsJson = JSON.stringify({ username, password });
-    const sourceName = name || new URL(url).hostname;
-    try {
-      if (source && editing) {
-        await invoke("update_source", { sourceId: source.id, name: sourceName, url, credentialsJson: credsJson });
-        toast.success("Source updated");
-      } else if (!source) {
-        await invoke("add_source", { name: sourceName, sourceType: "romm", url, credentialsJson: credsJson });
-        toast.success("Source added");
-      }
-      setEditing(false);
-      await onReload();
-      const sources: SourceConfig[] = await invoke("get_sources");
-      const romm = sources.find((s) => s.source_type === "romm");
-      if (romm) await startSync(romm.id);
-      await onReload();
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
+  const handleSave = useSourceSave({
+    source,
+    editing,
+    sourceType: "romm",
+    getName: useCallback(() => name || new URL(url).hostname, [name, url]),
+    getUrl: useCallback(() => url, [url]),
+    getCredentialsJson: useCallback(() => JSON.stringify({ username, password }), [username, password]),
+    setEditing,
+    onReload,
+    startSync,
+  });
 
   return (
     <div className="card mt-3xl">

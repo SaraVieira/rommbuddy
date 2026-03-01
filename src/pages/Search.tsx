@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import type { RomWithMeta, PlatformWithCount, LibraryPage } from "../types";
+import { useAtomValue } from "jotai";
+import type { RomWithMeta } from "../types";
 import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import { toast } from "sonner";
-
-const PAGE_SIZE = 50;
+import { platformsAtom } from "../store/platforms";
+import { usePaginatedRoms } from "../hooks/usePaginatedRoms";
 
 export default function Search() {
   const navigate = useNavigate();
@@ -16,16 +15,19 @@ export default function Search() {
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [roms, setRoms] = useState<RomWithMeta[]>([]);
-  const [total, setTotal] = useState(0);
-  const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
+  const platforms = useAtomValue(platformsAtom);
   const [selectedPlatform, setSelectedPlatform] = useState<number | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [searched, setSearched] = useState(false);
 
-  const offsetRef = useRef(0);
+  const searchEnabled = !!(debouncedQuery.trim() || selectedPlatform !== null);
+
+  const {
+    roms, total, loading, loadingMore, hasMore, loadMore, setRoms,
+  } = usePaginatedRoms({
+    platformId: selectedPlatform,
+    search: debouncedQuery || null,
+    enabled: searchEnabled,
+  });
 
   // Auto-focus on mount
   useEffect(() => {
@@ -39,68 +41,6 @@ export default function Search() {
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
-
-  // Load platforms
-  useEffect(() => {
-    invoke<PlatformWithCount[]>("get_platforms_with_counts")
-      .then(setPlatforms)
-      .catch(console.error);
-  }, []);
-
-  const doSearch = useCallback(async () => {
-    if (!debouncedQuery.trim() && selectedPlatform === null) {
-      setRoms([]);
-      setTotal(0);
-      setSearched(false);
-      return;
-    }
-    setLoading(true);
-    setSearched(true);
-    offsetRef.current = 0;
-    try {
-      const result: LibraryPage = await invoke("get_library_roms", {
-        platformId: selectedPlatform,
-        search: debouncedQuery || null,
-        offset: 0,
-        limit: PAGE_SIZE,
-      });
-      setRoms(result.roms);
-      setTotal(result.total);
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedQuery, selectedPlatform]);
-
-  useEffect(() => {
-    doSearch();
-  }, [doSearch]);
-
-  const loadMore = useCallback(async () => {
-    if (loadingMore) return;
-    const newOffset = offsetRef.current + PAGE_SIZE;
-    if (newOffset >= total) return;
-    setLoadingMore(true);
-    offsetRef.current = newOffset;
-    try {
-      const result: LibraryPage = await invoke("get_library_roms", {
-        platformId: selectedPlatform,
-        search: debouncedQuery || null,
-        offset: newOffset,
-        limit: PAGE_SIZE,
-      });
-      setRoms((prev) => [...prev, ...result.roms]);
-      setTotal(result.total);
-    } catch (e) {
-      toast.error(String(e));
-      offsetRef.current = newOffset - PAGE_SIZE;
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loadingMore, total, selectedPlatform, debouncedQuery]);
-
-  const hasMore = offsetRef.current + PAGE_SIZE < total;
 
   const handleSelectRom = (rom: RomWithMeta) => {
     navigate(`/rom/${rom.id}`, { state: { rom } });
@@ -144,7 +84,7 @@ export default function Search() {
         <ViewToggle view={view} onChange={setView} />
       </div>
 
-      {searched && !loading && roms.length > 0 && (
+      {searchEnabled && !loading && roms.length > 0 && (
         <div className="text-nav text-text-muted mb-lg shrink-0">
           Found {total} result{total !== 1 ? "s" : ""}
           {debouncedQuery ? <> for &ldquo;{debouncedQuery}&rdquo;</> : null}
@@ -152,7 +92,7 @@ export default function Search() {
       )}
 
       <div className="flex-1 min-h-0">
-        {!searched ? (
+        {!searchEnabled ? (
           <div className="text-center py-[60px] px-[20px] text-text-dim text-[15px]">
             Search by name or select a platform.
           </div>

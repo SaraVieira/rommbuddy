@@ -8,7 +8,7 @@ pub struct Model {
     pub platform_id: i64,
     pub core_name: String,
     pub core_path: String,
-    pub is_default: i32,
+    pub is_default: bool,
     pub created_at: String,
     pub emulator_type: String,
 }

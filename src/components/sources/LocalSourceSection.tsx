@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { SourceConfig, ConnectionTestResult } from "../../types";
+import type { ConnectionTestResult } from "../../types";
 import { useAtomValue } from "jotai";
 import { localPathAtom, localSourceAtom } from "@/store/sources";
 import { useAppSync } from "@/App";
-import { toast } from "sonner";
 import SourceConnected from "./SourceConnected";
+import { useSourceSave } from "./useSourceSave";
 
 interface Props {
   onReload: () => Promise<void>;
@@ -48,27 +48,17 @@ export default function LocalSourceSection({ onReload }: Props) {
     }
   };
 
-  const handleSave = async () => {
-    const credsJson = JSON.stringify({ path });
-    const sourceName = name || path.split("/").pop() || "Local ROMs";
-    try {
-      if (source && editing) {
-        await invoke("update_source", { sourceId: source.id, name: sourceName, url: null, credentialsJson: credsJson });
-        toast.success("Source updated");
-      } else if (!source) {
-        await invoke("add_source", { name: sourceName, sourceType: "local", url: null, credentialsJson: credsJson });
-        toast.success("Source added");
-      }
-      setEditing(false);
-      await onReload();
-      const sources: SourceConfig[] = await invoke("get_sources");
-      const local = sources.find((s) => s.source_type === "local");
-      if (local) await startSync(local.id);
-      await onReload();
-    } catch (e) {
-      toast.error(String(e));
-    }
-  };
+  const handleSave = useSourceSave({
+    source,
+    editing,
+    sourceType: "local",
+    getName: useCallback(() => name || path.split("/").pop() || "Local ROMs", [name, path]),
+    getUrl: useCallback(() => null, []),
+    getCredentialsJson: useCallback(() => JSON.stringify({ path }), [path]),
+    setEditing,
+    onReload,
+    startSync,
+  });
 
   return (
     <div className="card mt-3xl">

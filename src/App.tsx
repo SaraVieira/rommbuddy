@@ -1,19 +1,25 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { BookOpen, Cpu, Search, Database, Settings, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
+import OperationProgressBanner from "./components/OperationProgressBanner";
 import { useSyncState, type SyncState } from "./hooks/useSyncState";
 import { useEnrichState, type EnrichState } from "./hooks/useEnrichState";
-import type { PlatformWithCount, SourceConfig } from "./types";
+import type { SourceConfig } from "./types";
 import {
   favoritesOnlyAtom,
   selectedPlatformAtom,
   searchInputAtom,
   searchAtom,
 } from "./store/library";
+import {
+  platformCountAtom,
+  romCountAtom,
+  refreshPlatformsAtom,
+} from "./store/platforms";
 
 export const SyncContext = createContext<SyncState>({
   syncing: false,
@@ -47,8 +53,9 @@ export default function App() {
   const syncState = useSyncState();
   const enrichState = useEnrichState();
   const navigate = useNavigate();
-  const [platformCount, setPlatformCount] = useState(0);
-  const [romCount, setRomCount] = useState(0);
+  const platformCount = useAtomValue(platformCountAtom);
+  const romCount = useAtomValue(romCountAtom);
+  const refreshPlatforms = useSetAtom(refreshPlatformsAtom);
   const [sourceCount, setSourceCount] = useState(0);
   const [favoritesCount, setFavoritesCount] = useState(0);
 
@@ -60,11 +67,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const platforms: PlatformWithCount[] = await invoke(
-          "get_platforms_with_counts",
-        );
-        setPlatformCount(platforms.length);
-        setRomCount(platforms.reduce((sum, p) => sum + p.rom_count, 0));
+        await refreshPlatforms();
       } catch (e) {
         console.error("Failed to load platforms:", e);
         toast.error(String(e));
@@ -194,70 +197,19 @@ export default function App() {
           </nav>
           <main className="flex-1 overflow-y-auto">
             {syncState.syncing && syncState.progress && (
-              <div className="sticky top-0 z-50 flex items-center gap-xl px-6xl py-md bg-bg-sidebar border-b border-border">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-lg mb-xs">
-                    <span className="text-badge font-mono text-accent uppercase tracking-[1px] shrink-0">
-                      Syncing
-                    </span>
-                    <span className="text-badge font-mono text-text-muted truncate">
-                      {syncState.progress.current_item}
-                    </span>
-                    <span className="text-badge font-mono text-text-secondary shrink-0">
-                      {syncState.progress.current} / {syncState.progress.total}
-                      {syncState.progress.total > 0 &&
-                        ` (${Math.round((syncState.progress.current / syncState.progress.total) * 100)}%)`}
-                    </span>
-                  </div>
-                  <div className="h-1 bg-bg-elevated overflow-hidden">
-                    <div
-                      className="h-full bg-accent transition-[width] duration-200 ease-out shadow-accent-glow"
-                      style={{
-                        width: `${syncState.progress.total > 0 ? Math.round((syncState.progress.current / syncState.progress.total) * 100) : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <button
-                  className="btn btn-secondary btn-sm shrink-0"
-                  onClick={() => syncState.cancelSync(syncState.progress!.source_id)}
-                >
-                  Cancel
-                </button>
-              </div>
+              <OperationProgressBanner
+                label="Syncing"
+                progress={syncState.progress}
+                onCancel={() => syncState.cancelSync(syncState.progress!.source_id)}
+              />
             )}
             {enrichState.enriching && enrichState.progress && (
-              <div className="sticky top-0 z-50 flex items-center gap-xl px-6xl py-md bg-bg-sidebar border-b border-border">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-lg mb-xs">
-                    <span className="text-badge font-mono text-yellow-400 uppercase tracking-[1px] shrink-0">
-                      Enriching
-                    </span>
-                    <span className="text-badge font-mono text-text-muted truncate">
-                      {enrichState.progress.current_item}
-                    </span>
-                    <span className="text-badge font-mono text-text-secondary shrink-0">
-                      {enrichState.progress.current} / {enrichState.progress.total}
-                      {enrichState.progress.total > 0 &&
-                        ` (${Math.round((enrichState.progress.current / enrichState.progress.total) * 100)}%)`}
-                    </span>
-                  </div>
-                  <div className="h-1 bg-bg-elevated overflow-hidden">
-                    <div
-                      className="h-full bg-yellow-400 transition-[width] duration-200 ease-out"
-                      style={{
-                        width: `${enrichState.progress.total > 0 ? Math.round((enrichState.progress.current / enrichState.progress.total) * 100) : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <button
-                  className="btn btn-secondary btn-sm shrink-0"
-                  onClick={() => enrichState.cancelEnrich()}
-                >
-                  Cancel
-                </button>
-              </div>
+              <OperationProgressBanner
+                label="Enriching"
+                progress={enrichState.progress}
+                color="text-yellow-400"
+                onCancel={() => enrichState.cancelEnrich()}
+              />
             )}
             <div className="py-5xl px-6xl pt-[38px]">
               <Outlet />

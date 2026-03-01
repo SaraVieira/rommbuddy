@@ -1,14 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSetAtom } from "jotai";
-import type { PlatformWithCount } from "../types";
+import { useAtomValue, useSetAtom } from "jotai";
 import { getPlatformIcon } from "../utils/platformIcons";
 import {
   selectedPlatformAtom,
   searchInputAtom,
   searchAtom,
 } from "../store/library";
+import { platformsAtom } from "../store/platforms";
 
 export default function Platforms() {
   const navigate = useNavigate();
@@ -16,27 +15,8 @@ export default function Platforms() {
   const setSearchInput = useSetAtom(searchInputAtom);
   const setSearch = useSetAtom(searchAtom);
 
-  const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
+  const platforms = useAtomValue(platformsAtom);
   const [filter, setFilter] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const loadPlatforms = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result: PlatformWithCount[] = await invoke(
-        "get_platforms_with_counts",
-      );
-      setPlatforms(result);
-    } catch (e) {
-      console.error("Failed to load platforms:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPlatforms();
-  }, [loadPlatforms]);
 
   const filtered = platforms.filter((p) =>
     p.name.toLowerCase().includes(filter.toLowerCase()),
@@ -69,9 +49,7 @@ export default function Platforms() {
         />
       </div>
 
-      {loading ? (
-        <div className="text-center p-[40px] text-text-muted">Loading...</div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="text-center p-[40px] text-text-muted">
           No platforms found.
         </div>

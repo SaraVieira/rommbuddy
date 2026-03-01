@@ -541,17 +541,14 @@ pub async fn enrich_roms(
     // batch-fetch in chunks of 10, build a HashMap for O(1) lookup during the loop
     let mut igdb_batch: HashMap<i64, igdb::IgdbGameData> = HashMap::new();
     if let Some(client) = igdb_client {
-        let mut igdb_id_to_rom_ids: HashMap<i64, Vec<i64>> = HashMap::new();
+        let mut igdb_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
         for rom in &roms {
             if let Some(igdb_id) = query_hasheous_igdb_id(db, rom.id).await {
-                igdb_id_to_rom_ids
-                    .entry(igdb_id)
-                    .or_default()
-                    .push(rom.id);
+                igdb_ids.insert(igdb_id);
             }
         }
 
-        let all_igdb_ids: Vec<i64> = igdb_id_to_rom_ids.keys().copied().collect();
+        let all_igdb_ids: Vec<i64> = igdb_ids.into_iter().collect();
         for chunk in all_igdb_ids.chunks(10) {
             if cancel.is_cancelled() {
                 return Ok(());
@@ -749,32 +746,12 @@ async fn apply_igdb_data(db: &DatabaseConnection, rom_id: i64, game: &igdb::Igdb
 
     // Save IGDB cover art
     if let Some(url) = game.cover_url() {
-        if let Err(e) = db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            "INSERT INTO artwork (rom_id, art_type, url)
-             VALUES (?, 'cover', ?)
-             ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-            [rom_id.into(), url.into()],
-        ))
-        .await
-        {
-            log::warn!("Failed to insert IGDB cover for rom {rom_id}: {e}");
-        }
+        insert_artwork(db, rom_id, "cover", &url).await;
     }
 
     // Save IGDB screenshots
     for url in game.screenshot_urls() {
-        if let Err(e) = db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            "INSERT INTO artwork (rom_id, art_type, url)
-             VALUES (?, 'screenshot', ?)
-             ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-            [rom_id.into(), url.into()],
-        ))
-        .await
-        {
-            log::warn!("Failed to insert IGDB screenshot for rom {rom_id}: {e}");
-        }
+        insert_artwork(db, rom_id, "screenshot", &url).await;
     }
 }
 
@@ -828,18 +805,6 @@ async fn apply_screenscraper_artwork(
     media: &[screenscraper::SsMedia],
 ) {
     for item in media {
-        if let Err(e) = db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            "INSERT INTO artwork (rom_id, art_type, url)
-             VALUES (?, ?, ?)
-             ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-            [rom_id.into(), item.media_type.clone().into(), item.url.clone().into()],
-        ))
-        .await
-        {
-            log::warn!(
-                "Failed to insert ScreenScraper artwork for rom {rom_id}: {e}"
-            );
-        }
+        insert_artwork(db, rom_id, &item.media_type, &item.url).await;
     }
 }

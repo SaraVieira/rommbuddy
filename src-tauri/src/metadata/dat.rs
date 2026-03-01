@@ -399,7 +399,7 @@ pub async fn verify_roms(
         };
 
         // Look up in dat_entries by any available hash
-        let dat_match = find_dat_match(db, &crc, &md5, &sha1).await?;
+        let dat_match = find_dat_match(db, crc.as_deref(), md5.as_deref(), sha1.as_deref()).await?;
 
         match dat_match {
             Some((entry_id, game_name, status)) => {
@@ -438,14 +438,14 @@ pub async fn verify_roms(
 /// Find a matching DAT entry by hash (try SHA1 first, then MD5, then CRC32).
 async fn find_dat_match(
     db: &DatabaseConnection,
-    crc: &Option<String>,
-    md5: &Option<String>,
-    sha1: &Option<String>,
+    crc: Option<&str>,
+    md5: Option<&str>,
+    sha1: Option<&str>,
 ) -> AppResult<Option<(i64, String, Option<String>)>> {
     // SHA1 is most reliable
-    if let Some(ref sha1_val) = sha1 {
+    if let Some(sha1_val) = sha1 {
         if let Some(model) = dat_entries::Entity::find()
-            .filter(dat_entries::Column::Sha1.eq(sha1_val.as_str()))
+            .filter(dat_entries::Column::Sha1.eq(sha1_val))
             .one(db)
             .await?
         {
@@ -454,9 +454,9 @@ async fn find_dat_match(
     }
 
     // MD5
-    if let Some(ref md5_val) = md5 {
+    if let Some(md5_val) = md5 {
         if let Some(model) = dat_entries::Entity::find()
-            .filter(dat_entries::Column::Md5.eq(md5_val.as_str()))
+            .filter(dat_entries::Column::Md5.eq(md5_val))
             .one(db)
             .await?
         {
@@ -465,9 +465,9 @@ async fn find_dat_match(
     }
 
     // CRC32
-    if let Some(ref crc_val) = crc {
+    if let Some(crc_val) = crc {
         if let Some(model) = dat_entries::Entity::find()
-            .filter(dat_entries::Column::Crc32.eq(crc_val.as_str()))
+            .filter(dat_entries::Column::Crc32.eq(crc_val))
             .one(db)
             .await?
         {

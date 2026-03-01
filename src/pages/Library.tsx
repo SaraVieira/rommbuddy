@@ -1,39 +1,26 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAtom } from "jotai";
-import type {
-  RomWithMeta,
-  PlatformWithCount,
-  LibraryPage as LibraryPageType,
-} from "../types";
+import { useAtom, useAtomValue } from "jotai";
+import type { RomWithMeta } from "../types";
 import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
 import { useAppEnrich } from "../App";
-import { toast } from "sonner";
 import {
   searchInputAtom,
   searchAtom,
   selectedPlatformAtom,
   viewAtom,
 } from "../store/library";
-
-const PAGE_SIZE = 50;
+import { platformsAtom } from "../store/platforms";
+import { usePaginatedRoms } from "../hooks/usePaginatedRoms";
 
 export default function Library() {
   const navigate = useNavigate();
   const { enriching, startEnrich } = useAppEnrich();
 
-  const [roms, setRoms] = useState<RomWithMeta[]>([]);
-  const [total, setTotal] = useState(0);
-  const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  // Local offset — internal to loading logic
-  const offsetRef = useRef(0);
+  const platforms = useAtomValue(platformsAtom);
 
   // Persistent state via jotai
   const [searchInput, setSearchInput] = useAtom(searchInputAtom);
@@ -41,69 +28,12 @@ export default function Library() {
   const [selectedPlatform, setSelectedPlatform] = useAtom(selectedPlatformAtom);
   const [view, setView] = useAtom(viewAtom);
 
-  const loadRoms = useCallback(async () => {
-    setLoading(true);
-    offsetRef.current = 0;
-    try {
-      const result: LibraryPageType = await invoke("get_library_roms", {
-        platformId: selectedPlatform,
-        search: search || null,
-        offset: 0,
-        limit: PAGE_SIZE,
-      });
-      setRoms(result.roms);
-      setTotal(result.total);
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPlatform, search]);
-
-  const loadMore = useCallback(async () => {
-    if (loadingMore) return;
-    const newOffset = offsetRef.current + PAGE_SIZE;
-    if (newOffset >= total) return;
-    setLoadingMore(true);
-    offsetRef.current = newOffset;
-    try {
-      const result: LibraryPageType = await invoke("get_library_roms", {
-        platformId: selectedPlatform,
-        search: search || null,
-        offset: newOffset,
-        limit: PAGE_SIZE,
-      });
-      setRoms((prev) => [...prev, ...result.roms]);
-      setTotal(result.total);
-    } catch (e) {
-      toast.error(String(e));
-      // Roll back offset on failure
-      offsetRef.current = newOffset - PAGE_SIZE;
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [loadingMore, total, selectedPlatform, search]);
-
-  const hasMore = offsetRef.current + PAGE_SIZE < total;
-
-  const loadPlatforms = useCallback(async () => {
-    try {
-      const result: PlatformWithCount[] = await invoke(
-        "get_platforms_with_counts",
-      );
-      setPlatforms(result);
-    } catch (e) {
-      console.error("Failed to load platforms:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPlatforms();
-  }, [loadPlatforms]);
-
-  useEffect(() => {
-    loadRoms();
-  }, [loadRoms]);
+  const {
+    roms, total, loading, loadingMore, hasMore, loadMore, reload, setRoms,
+  } = usePaginatedRoms({
+    platformId: selectedPlatform,
+    search: search || null,
+  });
 
   // Debounce search
   useEffect(() => {
@@ -132,8 +62,8 @@ export default function Library() {
 
   const handleFetchMetadata = useCallback(async () => {
     await startEnrich(selectedPlatform, search || null);
-    loadRoms();
-  }, [startEnrich, selectedPlatform, search, loadRoms]);
+    reload();
+  }, [startEnrich, selectedPlatform, search, reload]);
 
   if (total === 0 && !loading && !search && selectedPlatform === null) {
     return (

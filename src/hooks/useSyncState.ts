@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-import { toast } from "sonner";
+import { useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAsyncOperation, createProgressChannel } from "./useAsyncOperation";
 import type { ScanProgress } from "../types";
 
 export interface SyncState {
@@ -11,38 +11,28 @@ export interface SyncState {
 }
 
 export function useSyncState(onComplete?: () => void): SyncState {
-  const [syncing, setSyncing] = useState(false);
-  const [progress, setProgress] = useState<ScanProgress | null>(null);
-  const syncingRef = useRef(false);
-
-  const startSync = useCallback(
-    async (sourceId: number) => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      setSyncing(true);
-      setProgress(null);
-      try {
-        const channel = new Channel<ScanProgress>();
-        channel.onmessage = (p) => {
-          setProgress(p);
-        };
+  const config = useMemo(
+    () => ({
+      run: async (setProgress: (p: ScanProgress) => void, sourceId: number) => {
+        const channel = createProgressChannel(setProgress);
         await invoke("sync_source", { sourceId, channel });
-        toast.success("Sync complete!");
-        onComplete?.();
-      } catch (e) {
-        toast.error(`Sync failed: ${e}`);
-      } finally {
-        syncingRef.current = false;
-        setSyncing(false);
-        setProgress(null);
-      }
-    },
-    [onComplete]
+      },
+      cancel: async (sourceId: number) => {
+        await invoke("cancel_sync", { sourceId });
+      },
+      successMessage: "Sync complete!",
+      errorPrefix: "Sync failed",
+      onComplete,
+    }),
+    [onComplete],
   );
 
-  const cancelSync = useCallback(async (sourceId: number) => {
-    await invoke("cancel_sync", { sourceId });
-  }, []);
+  const op = useAsyncOperation(config);
 
-  return { syncing, progress, startSync, cancelSync };
+  return {
+    syncing: op.running,
+    progress: op.progress,
+    startSync: op.start,
+    cancelSync: op.cancel,
+  };
 }

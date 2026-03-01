@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { ScanProgress } from "../../types";
 import { toast } from "sonner";
-import ProgressBar from "./ProgressBar";
+import ProgressBar from "../ProgressBar";
 import CredentialsSection from "./CredentialsSection";
 
 export default function IntegrationsTab() {
@@ -46,7 +46,7 @@ export default function IntegrationsTab() {
           >
             {updatingMetadataDb ? "Updating..." : "Update Metadata DB"}
           </button>
-          {metadataDbProgress && <ProgressBar progress={metadataDbProgress} />}
+          {metadataDbProgress && <ProgressBar current={metadataDbProgress.current} total={metadataDbProgress.total} currentItem={metadataDbProgress.current_item} />}
         </div>
       </section>
 
