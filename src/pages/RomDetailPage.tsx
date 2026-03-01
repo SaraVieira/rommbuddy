@@ -24,6 +24,7 @@ export default function RomDetailPage() {
   const [rom, setRom] = useState<RomWithMeta | undefined>(initialRom);
   const [loadingRom, setLoadingRom] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [hasCore, setHasCore] = useState(true);
 
   useEffect(() => {
     if (initialRom || !id) return;
@@ -46,6 +47,13 @@ export default function RomDetailPage() {
     };
   }, [id, initialRom]);
 
+  useEffect(() => {
+    if (!rom) return;
+    invoke<boolean>("has_core_mapping", { platformId: rom.platform_id }).then(
+      setHasCore,
+    ).catch(() => setHasCore(false));
+  }, [rom?.platform_id]);
+
   const { downloading, downloadProgress, launch } = useLaunchRom(
     rom?.id ?? 0,
     rom?.source_id ?? 0,
@@ -66,7 +74,7 @@ export default function RomDetailPage() {
           onClick={() => navigate("/")}
         >
           <ArrowLeft size={16} />
-          Back to Library
+          Back
         </button>
         <div className="text-center py-7xl text-text-muted">
           {loadingRom ? "Loading..." : "ROM not found."}
@@ -101,7 +109,7 @@ export default function RomDetailPage() {
             onClick={() => navigate(-1)}
           >
             <ArrowLeft size={16} />
-            Back to Library
+            Back
           </button>
 
           {downloading && downloadProgress ? (
@@ -110,14 +118,15 @@ export default function RomDetailPage() {
                 current={downloadProgress.downloaded_bytes}
                 total={downloadProgress.total_bytes}
                 label={downloadProgress.status}
+                formatBytes
               />
             </div>
           ) : (
-            <div className="flex gap-md shrink-0">
+            <div className="flex gap-md items-center shrink-0">
               <button
                 className="btn btn-primary flex items-center gap-lg"
                 onClick={() => launch()}
-                disabled={downloading}
+                disabled={downloading || !hasCore}
               >
                 <Play size={16} />
                 Launch
@@ -131,6 +140,11 @@ export default function RomDetailPage() {
                   <Download size={16} />
                   Download
                 </button>
+              )}
+              {!hasCore && (
+                <span className="text-badge font-mono text-error uppercase">
+                  [no core mapped]
+                </span>
               )}
             </div>
           )}

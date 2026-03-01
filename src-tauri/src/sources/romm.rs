@@ -416,8 +416,9 @@ impl RommClient {
         romm_rom_id: i64,
         file_name: &str,
     ) -> AppResult<reqwest::Response> {
+        let encoded_name = urlencoding::encode(file_name);
         let url = format!(
-            "{}/api/roms/{romm_rom_id}/content/{file_name}",
+            "{}/api/roms/{romm_rom_id}/content/{encoded_name}",
             self.base_url,
         );
         let resp = self.auth_get(&url).await?;

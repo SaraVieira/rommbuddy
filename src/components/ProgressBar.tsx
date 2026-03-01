@@ -2,10 +2,20 @@ interface Props {
   current: number;
   total: number;
   label?: string;
+  formatBytes?: boolean;
 }
 
-export default function ProgressBar({ current, total, label }: Props) {
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** i;
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+export default function ProgressBar({ current, total, label, formatBytes }: Props) {
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  const fmt = formatBytes ? formatSize : (n: number) => String(n);
 
   return (
     <div className="flex flex-col gap-sm">
@@ -21,7 +31,7 @@ export default function ProgressBar({ current, total, label }: Props) {
         />
       </div>
       <div className="text-nav text-text-muted">
-        {current} / {total} ({pct}%)
+        {fmt(current)} / {fmt(total)}{total > 0 ? ` (${pct}%)` : ""}
       </div>
     </div>
   );

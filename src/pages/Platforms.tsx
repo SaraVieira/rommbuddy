@@ -46,7 +46,7 @@ export default function Platforms() {
     setSelectedPlatform(platformId);
     setSearchInput("");
     setSearch("");
-    navigate("/");
+    navigate("/", { replace: true });
   };
 
   return (

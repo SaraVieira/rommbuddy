@@ -78,6 +78,7 @@ pub fn run() {
             commands::set_retroarch_path,
             commands::detect_cores,
             commands::get_core_mappings,
+            commands::has_core_mapping,
             commands::set_core_mapping,
             commands::download_and_launch,
             commands::get_available_cores,

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   PlatformWithCount,
@@ -6,6 +7,7 @@ import type {
   EmulatorDef,
 } from "../../types";
 import { useAppToast } from "../../App";
+import CoreSelect from "./CoreSelect";
 
 const DEFAULT_CORES: Record<string, string> = {
   gb: "gambatte_libretro",
@@ -40,8 +42,14 @@ export default function CoreMappings({
   onRefresh,
 }: CoreMappingsProps) {
   const toast = useAppToast();
+  const [hideMapped, setHideMapped] = useState(false);
 
   if (platforms.length === 0) return null;
+
+  const mappedCount = platforms.filter((p) =>
+    mappings.some((m) => m.platform_id === p.id),
+  ).length;
+  const unmappedCount = platforms.length - mappedCount;
 
   const getMappingValue = (mapping: CoreMapping | undefined): string => {
     if (!mapping) return "";
@@ -91,9 +99,23 @@ export default function CoreMappings({
 
   return (
     <section className="mt-3xl">
-      <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-        // Core Mappings
-      </h2>
+      <div className="flex items-center justify-between mb-lg">
+        <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide">
+          // Core Mappings
+        </h2>
+        <button
+          className={`px-xl py-sm font-mono text-badge uppercase border ${
+            hideMapped
+              ? "border-accent text-accent bg-accent/10"
+              : "border-border text-text-muted bg-bg-elevated hover:border-border-light"
+          }`}
+          onClick={() => setHideMapped((v) => !v)}
+        >
+          {hideMapped
+            ? `Showing unmapped (${unmappedCount})`
+            : `All (${platforms.length})`}
+        </button>
+      </div>
       <div className="card">
         <table className="w-full border-collapse">
           <thead>
@@ -110,7 +132,13 @@ export default function CoreMappings({
             </tr>
           </thead>
           <tbody>
-            {platforms.map((platform) => {
+            {platforms
+              .filter((p) =>
+                hideMapped
+                  ? !mappings.some((m) => m.platform_id === p.id)
+                  : true,
+              )
+              .map((platform) => {
               const mapping = mappings.find(
                 (m) => m.platform_id === platform.id,
               );
@@ -125,42 +153,16 @@ export default function CoreMappings({
                     </span>
                   </td>
                   <td className="p-md px-lg text-body text-text-primary border-b border-border align-middle">
-                    <select
-                      className="w-full py-sm px-md rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body"
+                    <CoreSelect
                       value={getMappingValue(mapping)}
-                      onChange={(e) =>
-                        handleCoreChange(platform.id, e.target.value)
+                      cores={cores}
+                      emulators={platformEmulators}
+                      defaultCore={defaultCore}
+                      hasRetroarchCores={hasRetroarchCores}
+                      onChange={(value) =>
+                        handleCoreChange(platform.id, value)
                       }
-                    >
-                      <option value="">Select...</option>
-                      {platformEmulators.length > 0 && (
-                        <optgroup label="Standalone Emulators">
-                          {platformEmulators.map((emu) => (
-                            <option
-                              key={`emu:${emu.id}`}
-                              value={`emu:${emu.id}`}
-                            >
-                              {emu.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {hasRetroarchCores && (
-                        <optgroup label="RetroArch Cores">
-                          {cores.map((core) => (
-                            <option
-                              key={`retroarch:${core.core_name}`}
-                              value={`retroarch:${core.core_name}`}
-                            >
-                              {core.display_name || core.core_name}
-                              {core.core_name === defaultCore
-                                ? " (recommended)"
-                                : ""}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
+                    />
                   </td>
                   <td className="p-md px-lg text-body text-text-primary border-b border-border align-middle">
                     {mapping ? (

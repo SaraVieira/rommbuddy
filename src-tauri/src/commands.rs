@@ -427,6 +427,13 @@ const ROM_WITH_META_SELECT: &str =
      FROM roms r
      JOIN platforms p ON p.id = r.platform_id";
 
+/// Default library sort: last-played first (most recent on top), then a
+/// deterministic pseudo-random shuffle for everything else (stable across pages).
+const LIBRARY_ORDER: &str =
+    "(SELECT MAX(l.last_played_at) FROM library l WHERE l.rom_id = r.id) IS NULL,
+     (SELECT MAX(l.last_played_at) FROM library l WHERE l.rom_id = r.id) DESC,
+     (r.id * 2654435761) % 4294967296";
+
 /// Helper: execute a raw count query with dynamic values via SeaORM.
 async fn count_query(db: &DatabaseConnection, sql: &str, values: Vec<sea_orm::Value>) -> AppResult<i64> {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
@@ -496,7 +503,7 @@ pub async fn get_library_roms(
                  LEFT JOIN sources s ON s.id = sr.source_id
                  WHERE roms_fts MATCH ? AND r.platform_id = ?{fav_clause}
                  GROUP BY r.id
-                 ORDER BY r.name
+                 ORDER BY {LIBRARY_ORDER}
                  LIMIT ? OFFSET ?",
             );
             query_rom_rows(db.inner(), &q, vec![search_query.clone().into(), pid.into(), limit.into(), offset.into()]).await?
@@ -510,7 +517,7 @@ pub async fn get_library_roms(
                  LEFT JOIN sources s ON s.id = sr.source_id
                  WHERE roms_fts MATCH ?{fav_clause}
                  GROUP BY r.id
-                 ORDER BY r.name
+                 ORDER BY {LIBRARY_ORDER}
                  LIMIT ? OFFSET ?",
             );
             query_rom_rows(db.inner(), &q, vec![search_query.clone().into(), limit.into(), offset.into()]).await?
@@ -561,7 +568,7 @@ async fn get_library_roms_filtered(
              LEFT JOIN sources s ON s.id = sr.source_id
              {where_clause}
              GROUP BY r.id
-             ORDER BY r.name
+             ORDER BY {LIBRARY_ORDER}
              LIMIT ? OFFSET ?",
         );
         let rows = query_rom_rows(db.inner(), &q, vec![pid.into(), limit.into(), offset.into()]).await?;
@@ -581,7 +588,7 @@ async fn get_library_roms_filtered(
              LEFT JOIN sources s ON s.id = sr.source_id
              {where_clause}
              GROUP BY r.id
-             ORDER BY r.name
+             ORDER BY {LIBRARY_ORDER}
              LIMIT ? OFFSET ?",
         );
         let rows = query_rom_rows(db.inner(), &q, vec![limit.into(), offset.into()]).await?;
@@ -597,7 +604,7 @@ async fn get_library_roms_filtered(
              LEFT JOIN source_roms sr ON sr.rom_id = r.id
              LEFT JOIN sources s ON s.id = sr.source_id
              GROUP BY r.id
-             ORDER BY r.name
+             ORDER BY {LIBRARY_ORDER}
              LIMIT ? OFFSET ?",
         );
         let rows = query_rom_rows(db.inner(), &q, vec![limit.into(), offset.into()]).await?;
@@ -977,6 +984,20 @@ pub async fn get_core_mappings(db: State<'_, DatabaseConnection>) -> AppResult<V
 }
 
 #[tauri::command]
+pub async fn has_core_mapping(
+    db: State<'_, DatabaseConnection>,
+    platform_id: i64,
+) -> AppResult<bool> {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let row = db.inner().query_one(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "SELECT 1 FROM core_mappings WHERE platform_id = ? LIMIT 1",
+        [platform_id.into()],
+    )).await?;
+    Ok(row.is_some())
+}
+
+#[tauri::command]
 pub async fn set_core_mapping(
     db: State<'_, DatabaseConnection>,
     platform_id: i64,
@@ -1013,6 +1034,7 @@ pub async fn download_and_launch(
     #[derive(Debug, FromQueryResult)]
     struct RomDownloadInfo {
         file_name: String,
+        file_size: Option<i64>,
         platform_id: i64,
         source_rom_id: String,
         source_type: String,
@@ -1021,7 +1043,7 @@ pub async fn download_and_launch(
     // 1. Get ROM info + source type (try exact source_id first, fall back to any source)
     let rom = RomDownloadInfo::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Sqlite,
-        "SELECT r.file_name, r.platform_id, sr.source_rom_id, s.source_type
+        "SELECT r.file_name, r.file_size, r.platform_id, sr.source_rom_id, s.source_type
          FROM roms r
          JOIN source_roms sr ON sr.rom_id = r.id AND sr.source_id = ?
          JOIN sources s ON s.id = sr.source_id
@@ -1037,7 +1059,7 @@ pub async fn download_and_launch(
         // Fallback: use any available source for this ROM
         RomDownloadInfo::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
-            "SELECT r.file_name, r.platform_id, sr.source_rom_id, s.source_type
+            "SELECT r.file_name, r.file_size, r.platform_id, sr.source_rom_id, s.source_type
              FROM roms r
              JOIN source_roms sr ON sr.rom_id = r.id
              JOIN sources s ON s.id = sr.source_id
@@ -1050,7 +1072,7 @@ pub async fn download_and_launch(
         .ok_or_else(|| AppError::Other("ROM not found in any source".to_string()))?
     };
 
-    let RomDownloadInfo { file_name, platform_id, source_rom_id, source_type } = rom;
+    let RomDownloadInfo { file_name, file_size, platform_id, source_rom_id, source_type } = rom;
 
     // 2. Check core mapping exists
     #[derive(Debug, FromQueryResult)]
@@ -1147,10 +1169,14 @@ pub async fn download_and_launch(
 
             let resp = client.download_rom(romm_id, &file_name).await?;
 
-            let total_bytes = resp.content_length().unwrap_or(0);
+            let total_bytes = resp.content_length()
+                .or_else(|| file_size.and_then(|s| u64::try_from(s).ok()))
+                .unwrap_or(0);
             let mut downloaded: u64 = 0;
 
-            let mut file = tokio::fs::File::create(&cached).await?;
+            // Download to a temp file, then rename atomically to avoid partial cached files
+            let tmp_path = cache_dir.join(format!(".{file_name}.part"));
+            let mut file = tokio::fs::File::create(&tmp_path).await?;
             let mut stream = resp.bytes_stream();
 
             while let Some(chunk) = stream.next().await {
@@ -1163,11 +1189,29 @@ pub async fn download_and_launch(
                 let _ = channel.send(DownloadProgress::downloading(rom_id, downloaded, total_bytes));
             }
             file.flush().await?;
+            file.sync_all().await?;
+            drop(file);
+            tokio::fs::rename(&tmp_path, &cached).await?;
         }
         cached
     };
 
-    // 6. Launch RetroArch
+    // 6. Update play stats (upsert — library row may not exist yet)
+    {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        let _ = db.inner().execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO library (rom_id, source_id, play_count, last_played_at)
+             VALUES (?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+             ON CONFLICT(rom_id, source_id) DO UPDATE SET
+                play_count = play_count + 1,
+                last_played_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+            [rom_id.into(), source_id.into()],
+        )).await;
+    }
+
+    // 7. Launch RetroArch
     let _ = channel.send(DownloadProgress::status(rom_id, "launching"));
 
     let rom_path_str = rom_path.to_string_lossy().to_string();
