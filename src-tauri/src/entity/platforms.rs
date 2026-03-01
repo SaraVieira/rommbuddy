@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+use super::json_vec::JsonVec;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "platforms")]
 pub struct Model {
@@ -11,9 +13,9 @@ pub struct Model {
     pub igdb_id: Option<i64>,
     pub screenscraper_id: Option<i64>,
     #[sea_orm(column_type = "Text")]
-    pub file_extensions: String,
+    pub file_extensions: JsonVec,
     #[sea_orm(column_type = "Text")]
-    pub folder_aliases: String,
+    pub folder_aliases: JsonVec,
     pub created_at: String,
     pub updated_at: String,
 }

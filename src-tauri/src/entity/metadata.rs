@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+use super::json_vec::JsonVec;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "metadata")]
 pub struct Model {
@@ -16,9 +18,9 @@ pub struct Model {
     pub developer: Option<String>,
     pub publisher: Option<String>,
     #[sea_orm(column_type = "Text")]
-    pub genres: String,
+    pub genres: JsonVec,
     #[sea_orm(column_type = "Text")]
-    pub themes: String,
+    pub themes: JsonVec,
     pub metadata_fetched_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,

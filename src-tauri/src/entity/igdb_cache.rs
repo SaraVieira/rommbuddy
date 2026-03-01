@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+use super::json_vec::JsonVec;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "igdb_cache")]
 pub struct Model {
@@ -13,14 +15,14 @@ pub struct Model {
     pub storyline: Option<String>,
     pub aggregated_rating: Option<f64>,
     pub first_release_date: Option<String>,
-    pub genres: Option<String>,
-    pub themes: Option<String>,
-    pub game_modes: Option<String>,
-    pub player_perspectives: Option<String>,
+    pub genres: Option<JsonVec>,
+    pub themes: Option<JsonVec>,
+    pub game_modes: Option<JsonVec>,
+    pub player_perspectives: Option<JsonVec>,
     pub developer: Option<String>,
     pub publisher: Option<String>,
     pub cover_image_id: Option<String>,
-    pub screenshot_image_ids: Option<String>,
+    pub screenshot_image_ids: Option<JsonVec>,
     pub franchise_name: Option<String>,
     pub raw_response: Option<String>,
     pub fetched_at: String,

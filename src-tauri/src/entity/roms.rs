@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+use super::json_vec::JsonVec;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "roms")]
 pub struct Model {
@@ -13,9 +15,9 @@ pub struct Model {
     pub hash_md5: Option<String>,
     pub hash_sha1: Option<String>,
     #[sea_orm(column_type = "Text")]
-    pub regions: String,
+    pub regions: JsonVec,
     #[sea_orm(column_type = "Text")]
-    pub languages: String,
+    pub languages: JsonVec,
     pub verification_status: Option<String>,
     pub dat_entry_id: Option<i64>,
     pub dat_game_name: Option<String>,

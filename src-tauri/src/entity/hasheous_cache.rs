@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 
+use super::json_vec::JsonVec;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "hasheous_cache")]
 pub struct Model {
@@ -12,7 +14,7 @@ pub struct Model {
     pub publisher: Option<String>,
     pub year: Option<String>,
     pub description: Option<String>,
-    pub genres: String,
+    pub genres: JsonVec,
     pub igdb_game_id: Option<String>,
     pub igdb_platform_id: Option<String>,
     pub thegamesdb_game_id: Option<String>,

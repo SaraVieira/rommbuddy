@@ -220,15 +220,13 @@ pub async fn get_cached(db: &DatabaseConnection, rom_id: i64) -> Option<Hasheous
         }
     };
 
-    let genres: Vec<String> = serde_json::from_str(&model.genres).unwrap_or_default();
-
     Some(HasheousResult {
         hasheous_id: model.hasheous_id,
         name: model.name?,
         publisher: model.publisher,
         year: model.year,
         description: model.description,
-        genres,
+        genres: model.genres.into_inner(),
         igdb_game_id: model.igdb_game_id,
         igdb_platform_id: model.igdb_platform_id,
         thegamesdb_game_id: model.thegamesdb_game_id,

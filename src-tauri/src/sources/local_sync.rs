@@ -346,8 +346,8 @@ pub async fn sync_local_to_db(
                     name: Set(display_name.to_string()),
                     igdb_id: Set(None),
                     screenscraper_id: Set(platform_registry::ss_id(&scanned.canonical_slug).map(|id| id as i64)),
-                    file_extensions: Set("[]".to_string()),
-                    folder_aliases: Set("[]".to_string()),
+                    file_extensions: Set(crate::entity::json_vec::JsonVec::default()),
+                    folder_aliases: Set(crate::entity::json_vec::JsonVec::default()),
                     created_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
                     updated_at: Set(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
                 }.insert(db).await?;
