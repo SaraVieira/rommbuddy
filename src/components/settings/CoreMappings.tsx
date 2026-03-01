@@ -7,7 +7,7 @@ import type {
   EmulatorDef,
 } from "../../types";
 import { toast } from "sonner";
-import CoreSelect from "./CoreSelect";
+import CoreSelect, { type CoreSelectValue, encodeMapping, decodeMapping } from "./CoreSelect";
 import { DEFAULT_CORES } from "../../utils/defaultCores";
 
 interface CoreMappingsProps {
@@ -43,36 +43,30 @@ export default function CoreMappings({
   ).length;
   const unmappedCount = platforms.length - mappedCount;
 
-  const getMappingValue = (mapping: CoreMapping | undefined): string => {
+  const getMappingValue = (mapping: CoreMapping | undefined): CoreSelectValue => {
     if (!mapping) return "";
-    if (mapping.emulator_type !== "retroarch")
-      return `emu:${mapping.emulator_type}`;
-    return `retroarch:${mapping.core_name}`;
+    return encodeMapping(mapping.emulator_type, mapping.core_name);
   };
 
   const getEmulatorsForPlatform = (slug: string) =>
     emulators.filter((e) => e.platforms.includes(slug) && emulatorPaths[e.id]);
 
-  const handleCoreChange = async (platformId: number, value: string) => {
-    if (value.startsWith("emu:")) {
-      const emulatorId = value.slice(4);
-      try {
+  const handleCoreChange = async (platformId: number, value: CoreSelectValue) => {
+    const decoded = decodeMapping(value);
+    if (!decoded) return;
+
+    try {
+      if (decoded.type === "emulator") {
         await invoke("set_core_mapping", {
           platformId,
-          coreName: emulatorId,
+          coreName: decoded.id,
           corePath: "",
-          emulatorType: emulatorId,
+          emulatorType: decoded.id,
         });
         toast.success("Emulator mapping saved");
-        onRefresh();
-      } catch (e) {
-        toast.error(String(e));
-      }
-    } else if (value.startsWith("retroarch:")) {
-      const coreName = value.slice(10);
-      const core = cores.find((c) => c.core_name === coreName);
-      if (!core) return;
-      try {
+      } else {
+        const core = cores.find((c) => c.core_name === decoded.coreName);
+        if (!core) return;
         await invoke("set_core_mapping", {
           platformId,
           coreName: core.core_name,
@@ -80,10 +74,10 @@ export default function CoreMappings({
           emulatorType: "retroarch",
         });
         toast.success("Core mapping saved");
-        onRefresh();
-      } catch (e) {
-        toast.error(String(e));
       }
+      onRefresh();
+    } catch (e) {
+      toast.error(String(e));
     }
   };
 

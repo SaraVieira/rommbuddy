@@ -16,13 +16,34 @@ import {
 } from "@/components/ui/popover";
 import type { CoreInfo, EmulatorDef } from "../../types";
 
+const EMU_PREFIX = "emu:" as const;
+const RETROARCH_PREFIX = "retroarch:" as const;
+
+export type CoreSelectValue = `emu:${string}` | `retroarch:${string}` | "";
+
+type DecodedMapping =
+  | { type: "emulator"; id: string }
+  | { type: "retroarch"; coreName: string };
+
+export function encodeMapping(emulatorType: string, coreName: string): CoreSelectValue {
+  if (emulatorType !== "retroarch") return `${EMU_PREFIX}${emulatorType}`;
+  return `${RETROARCH_PREFIX}${coreName}`;
+}
+
+export function decodeMapping(value: CoreSelectValue): DecodedMapping | null {
+  if (!value) return null;
+  if (value.startsWith(EMU_PREFIX)) return { type: "emulator", id: value.slice(EMU_PREFIX.length) };
+  if (value.startsWith(RETROARCH_PREFIX)) return { type: "retroarch", coreName: value.slice(RETROARCH_PREFIX.length) };
+  return null;
+}
+
 interface CoreSelectProps {
-  value: string;
+  value: CoreSelectValue;
   cores: CoreInfo[];
   emulators: EmulatorDef[];
   defaultCore?: string;
   hasRetroarchCores: boolean;
-  onChange: (value: string) => void;
+  onChange: (value: CoreSelectValue) => void;
 }
 
 export default function CoreSelect({
@@ -36,18 +57,14 @@ export default function CoreSelect({
   const [open, setOpen] = useState(false);
 
   const getLabel = () => {
-    if (!value) return "Select...";
-    if (value.startsWith("emu:")) {
-      const emuId = value.slice(4);
-      const emu = emulators.find((e) => e.id === emuId);
-      return emu ? emu.name : emuId;
+    const decoded = decodeMapping(value);
+    if (!decoded) return "Select...";
+    if (decoded.type === "emulator") {
+      const emu = emulators.find((e) => e.id === decoded.id);
+      return emu ? emu.name : decoded.id;
     }
-    if (value.startsWith("retroarch:")) {
-      const coreName = value.slice(10);
-      const core = cores.find((c) => c.core_name === coreName);
-      return core ? (core.display_name || core.core_name) : coreName;
-    }
-    return value;
+    const core = cores.find((c) => c.core_name === decoded.coreName);
+    return core ? (core.display_name || core.core_name) : decoded.coreName;
   };
 
   return (
@@ -79,7 +96,7 @@ export default function CoreSelect({
               <CommandItem
                 value="__none__"
                 onSelect={() => {
-                  onChange("");
+                  onChange("" as CoreSelectValue);
                   setOpen(false);
                 }}
                 className="font-mono text-body rounded-none cursor-pointer data-[selected=true]:bg-accent-tint-10 data-[selected=true]:text-text-primary"
@@ -97,7 +114,7 @@ export default function CoreSelect({
             {emulators.length > 0 && (
               <CommandGroup heading="Standalone Emulators">
                 {emulators.map((emu) => {
-                  const emuValue = `emu:${emu.id}`;
+                  const emuValue: CoreSelectValue = `emu:${emu.id}`;
                   return (
                     <CommandItem
                       key={emuValue}
@@ -126,7 +143,7 @@ export default function CoreSelect({
             {hasRetroarchCores && (
               <CommandGroup heading="RetroArch Cores">
                 {cores.map((core) => {
-                  const coreValue = `retroarch:${core.core_name}`;
+                  const coreValue: CoreSelectValue = `retroarch:${core.core_name}`;
                   const label = core.display_name || core.core_name;
                   const isDefault = core.core_name === defaultCore;
                   return (

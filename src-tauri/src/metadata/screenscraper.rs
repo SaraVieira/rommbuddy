@@ -9,9 +9,9 @@ use crate::error::{AppError, AppResult};
 // Developer credentials (identify this app to ScreenScraper)
 // ---------------------------------------------------------------------------
 
-const DEV_ID: &str = "NikkitaFTW";
-const DEV_PASSWORD: &str = "5RnA96uSQAE";
-const SOFT_NAME: &str = "rommatcher";
+const DEV_ID: &str = env!("SCREENSCRAPER_DEV_ID");
+const DEV_PASSWORD: &str = env!("SCREENSCRAPER_DEV_PASSWORD");
+const SOFT_NAME: &str = env!("SCREENSCRAPER_SOFT_NAME");
 
 // ---------------------------------------------------------------------------
 // User credentials (optional, stored in settings.json)

@@ -4464,6 +4464,7 @@ dependencies = [
  "crc32fast",
  "directories",
  "dirs",
+ "dotenvy",
  "futures-util",
  "log",
  "md-5",

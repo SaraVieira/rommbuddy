@@ -11,22 +11,6 @@ pub struct Platform {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct RomEntry {
-    pub id: i64,
-    pub platform_id: i64,
-    pub name: String,
-    pub file_name: String,
-    pub file_size: Option<i64>,
-    pub hash_crc32: Option<String>,
-    pub hash_sha1: Option<String>,
-    pub hash_md5: Option<String>,
-    pub regions: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub id: i64,
     pub name: String,
@@ -43,26 +27,6 @@ pub struct SourceConfig {
 pub enum SourceType {
     Local,
     Romm,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct LibraryEntry {
-    pub id: i64,
-    pub rom_id: i64,
-    pub source_id: i64,
-    pub file_path: Option<String>,
-    pub play_count: i64,
-    pub last_played_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct BrowseResult {
-    pub path: String,
-    pub directories: Vec<String>,
-    pub files: Vec<RomEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,9 +152,9 @@ pub struct EmulatorDef {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct TokenPair {
     pub access_token: String,
+    #[allow(dead_code)] // stored for future token refresh support
     pub refresh_token: String,
 }
 

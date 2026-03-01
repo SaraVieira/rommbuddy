@@ -87,20 +87,26 @@ export default function RetroArchTab() {
         retroarchPath: path,
       });
       setCores(detected);
-      for (const platform of platforms) {
-        const defaultCore = DEFAULT_CORES[platform.slug];
-        if (defaultCore) {
-          const found = detected.find((c) => c.core_name === defaultCore);
-          if (found && !mappings.find((m) => m.platform_id === platform.id)) {
-            await invoke("set_core_mapping", {
+      await Promise.all(
+        platforms
+          .filter((platform) => {
+            const defaultCore = DEFAULT_CORES[platform.slug];
+            if (!defaultCore) return false;
+            const found = detected.find((c) => c.core_name === defaultCore);
+            return found && !mappings.find((m) => m.platform_id === platform.id);
+          })
+          .map((platform) => {
+            const found = detected.find(
+              (c) => c.core_name === DEFAULT_CORES[platform.slug],
+            )!;
+            return invoke("set_core_mapping", {
               platformId: platform.id,
               coreName: found.core_name,
               corePath: found.core_path,
               emulatorType: "retroarch",
             });
-          }
-        }
-      }
+          }),
+      );
       await loadMappings();
     } catch (e) {
       setPathValid(false);

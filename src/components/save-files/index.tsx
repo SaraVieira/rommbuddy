@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useSetAtom } from "jotai";
@@ -20,7 +20,7 @@ export function SaveFiles({
   const [loading, setLoading] = useState(true);
   const setRomSaves = useSetAtom(romSavesAtom);
 
-  const fetchSaves = async () => {
+  const fetchSaves = useCallback(async () => {
     try {
       const result = await invoke<SaveFileInfo[]>("get_rom_saves", { romId });
       setSaves(result);
@@ -29,12 +29,12 @@ export function SaveFiles({
       console.error("Failed to load saves:", e);
       toast.error(String(e));
     }
-  };
+  }, [romId, setRomSaves]);
 
   useEffect(() => {
     setLoading(true);
     fetchSaves().finally(() => setLoading(false));
-  }, [romId]);
+  }, [fetchSaves]);
 
   const handleDelete = async (sf: SaveFileInfo) => {
     if (!confirm(`Delete ${sf.file_name}? This cannot be undone.`)) return;

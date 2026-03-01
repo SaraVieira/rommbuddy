@@ -1,9 +1,8 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useAtomValue, useSetAtom } from "jotai";
 import { BookOpen, Cpu, Search, Database, Settings, Heart } from "lucide-react";
-import { toast } from "sonner";
 import { Toaster } from "./components/ui/sonner";
 import OperationProgressBanner from "./components/OperationProgressBanner";
 import { useSyncState, type SyncState } from "./hooks/useSyncState";
@@ -50,8 +49,6 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function App() {
-  const syncState = useSyncState();
-  const enrichState = useEnrichState();
   const navigate = useNavigate();
   const platformCount = useAtomValue(platformCountAtom);
   const romCount = useAtomValue(romCountAtom);
@@ -64,30 +61,32 @@ export default function App() {
   const setSearchInput = useSetAtom(searchInputAtom);
   const setSearch = useSetAtom(searchAtom);
 
+  const refreshStats = useCallback(async () => {
+    try {
+      await refreshPlatforms();
+    } catch (e) {
+      console.error("Failed to load platforms:", e);
+    }
+    try {
+      const sources: SourceConfig[] = await invoke("get_sources");
+      setSourceCount(sources.length);
+    } catch (e) {
+      console.error("Failed to load sources:", e);
+    }
+    try {
+      const count: number = await invoke("get_favorites_count");
+      setFavoritesCount(count);
+    } catch (e) {
+      console.error("Failed to load favorites count:", e);
+    }
+  }, [refreshPlatforms]);
+
+  const syncState = useSyncState(refreshStats);
+  const enrichState = useEnrichState(refreshStats);
+
   useEffect(() => {
-    (async () => {
-      try {
-        await refreshPlatforms();
-      } catch (e) {
-        console.error("Failed to load platforms:", e);
-        toast.error(String(e));
-      }
-      try {
-        const sources: SourceConfig[] = await invoke("get_sources");
-        setSourceCount(sources.length);
-      } catch (e) {
-        console.error("Failed to load sources:", e);
-        toast.error(String(e));
-      }
-      try {
-        const count: number = await invoke("get_favorites_count");
-        setFavoritesCount(count);
-      } catch (e) {
-        console.error("Failed to load favorites count:", e);
-        toast.error(String(e));
-      }
-    })();
-  }, []);
+    refreshStats();
+  }, [refreshStats]);
 
   const handleFavoritesClick = () => {
     setFavoritesOnly(true);
