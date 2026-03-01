@@ -12,6 +12,7 @@ import CoreMappings from "./CoreMappings";
 import InstallCores from "./InstallCores";
 import { DEFAULT_CORES } from "../../utils/defaultCores";
 import { platformsAtom } from "../../store/platforms";
+import SectionHeading from "../SectionHeading";
 
 export default function RetroArchTab() {
   const [retroarchPath, setRetroarchPath] = useState("");
@@ -117,9 +118,7 @@ export default function RetroArchTab() {
   return (
     <>
       <section>
-        <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-          // RetroArch Path
-        </h2>
+        <SectionHeading className="mb-lg">RetroArch Path</SectionHeading>
         <div className="card">
           <div className="form-group">
             <label>RetroArch Path</label>

@@ -104,13 +104,6 @@ export interface LibraryPage {
   total: number;
 }
 
-export interface MetadataProgress {
-  total: number;
-  current: number;
-  current_item: string;
-  phase: "downloading_db" | "enriching";
-}
-
 export interface AchievementData {
   game_title: string;
   num_achievements: number;
@@ -131,31 +124,6 @@ export interface Achievement {
 export interface RaCredentials {
   username: string;
   api_key: string;
-}
-
-export interface RaTestResult {
-  success: boolean;
-  message: string;
-}
-
-export interface IgdbCredentials {
-  client_id: string;
-  client_secret: string;
-}
-
-export interface IgdbTestResult {
-  success: boolean;
-  message: string;
-}
-
-export interface SsCredentials {
-  username: string;
-  password: string;
-}
-
-export interface SsTestResult {
-  success: boolean;
-  message: string;
 }
 
 export interface DatDetectResult {

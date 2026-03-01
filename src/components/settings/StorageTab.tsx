@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CacheInfo } from "../../types";
 import { toast } from "sonner";
-import { formatSize } from "../../utils/format";
+import { formatSize, formatDate } from "../../utils/format";
+import SectionHeading from "../SectionHeading";
 
 const EVICTION_OPTIONS = [3, 7, 14, 30] as const;
 
@@ -69,9 +70,7 @@ export default function StorageTab() {
   return (
     <>
       <section>
-        <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-          // Auto-Cleanup
-        </h2>
+        <SectionHeading className="mb-lg">Auto-Cleanup</SectionHeading>
         <div className="card">
           <div className="form-group">
             <label>Remove cached ROMs not played in</label>
@@ -96,9 +95,7 @@ export default function StorageTab() {
 
       <section className="mt-3xl">
         <div className="flex items-center justify-between mb-lg">
-          <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide">
-            // ROM Cache
-          </h2>
+          <SectionHeading>ROM Cache</SectionHeading>
           <span className="font-mono text-nav text-text-secondary">
             {formatSize(cacheInfo?.total_size ?? 0)} used
           </span>
@@ -138,7 +135,7 @@ export default function StorageTab() {
                       </td>
                       <td className="p-md px-lg text-body text-text-secondary border-b border-border whitespace-nowrap">
                         {file.last_played_at
-                          ? new Date(file.last_played_at).toLocaleDateString()
+                          ? formatDate(file.last_played_at)
                           : "Never"}
                       </td>
                       <td className="p-md px-lg text-body border-b border-border text-right">

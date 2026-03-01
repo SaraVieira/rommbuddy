@@ -2,6 +2,8 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CoreInfo } from "../../types";
 import { toast } from "sonner";
+import SectionHeading from "../SectionHeading";
+import SearchInput from "../SearchInput";
 
 interface InstallCoresProps {
   retroarchPath: string;
@@ -55,9 +57,7 @@ export default function InstallCores({
 
   return (
     <section className="mt-3xl">
-      <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-        // Install Cores
-      </h2>
+      <SectionHeading className="mb-lg">Install Cores</SectionHeading>
       <div className="card">
         {availableCores.length === 0 ? (
           <button
@@ -70,9 +70,8 @@ export default function InstallCores({
         ) : (
           <>
             <div className="flex items-center gap-lg mb-lg">
-              <input
-                type="text"
-                className="flex-1 px-[10px] py-[6px] rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body focus:border-accent outline-none"
+              <SearchInput
+                className="flex-1"
                 placeholder="Search cores..."
                 value={coreSearch}
                 onChange={(e) => setCoreSearch(e.target.value)}

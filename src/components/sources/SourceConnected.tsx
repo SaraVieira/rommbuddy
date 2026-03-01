@@ -4,6 +4,7 @@ import type { SourceConfig } from "../../types";
 import ProgressBar from "../ProgressBar";
 import { useAppSync } from "../../App";
 import { toast } from "sonner";
+import { formatDateTime } from "../../utils/format";
 
 interface SourceConnectedProps {
   source: SourceConfig;
@@ -40,7 +41,7 @@ export default function SourceConnected({ source, subtitle, onEdit, onReload }: 
         <span>{subtitle}</span>
         {source.last_synced_at && (
           <span className="text-accent font-mono font-semibold">
-            Last synced: {new Date(source.last_synced_at).toLocaleString()}
+            Last synced: {formatDateTime(source.last_synced_at)}
           </span>
         )}
       </div>

@@ -1,12 +1,12 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useAtomValue, useSetAtom } from "jotai";
 import { BookOpen, Cpu, Search, Database, Settings, Heart } from "lucide-react";
 import { Toaster } from "./components/ui/sonner";
 import OperationProgressBanner from "./components/OperationProgressBanner";
-import { useSyncState, type SyncState } from "./hooks/useSyncState";
-import { useEnrichState, type EnrichState } from "./hooks/useEnrichState";
+import { useSyncState } from "./hooks/useSyncState";
+import { useEnrichState } from "./hooks/useEnrichState";
 import type { SourceConfig } from "./types";
 import {
   favoritesOnlyAtom,
@@ -19,26 +19,14 @@ import {
   romCountAtom,
   refreshPlatformsAtom,
 } from "./store/platforms";
-
-export const SyncContext = createContext<SyncState>({
-  syncing: false,
-  progress: null,
-  startSync: async () => {},
-  cancelSync: async () => {},
-});
-export const EnrichContext = createContext<EnrichState>({
-  enriching: false,
-  progress: null,
-  startEnrich: async () => {},
-  cancelEnrich: async () => {},
-});
+import { syncStateAtom, enrichStateAtom } from "./store/operations";
 
 export function useAppSync() {
-  return useContext(SyncContext);
+  return useAtomValue(syncStateAtom);
 }
 
 export function useAppEnrich() {
-  return useContext(EnrichContext);
+  return useAtomValue(enrichStateAtom);
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -83,6 +71,16 @@ export default function App() {
 
   const syncState = useSyncState(refreshStats);
   const enrichState = useEnrichState(refreshStats);
+  const setSyncState = useSetAtom(syncStateAtom);
+  const setEnrichState = useSetAtom(enrichStateAtom);
+
+  useEffect(() => {
+    setSyncState(syncState);
+  }, [syncState, setSyncState]);
+
+  useEffect(() => {
+    setEnrichState(enrichState);
+  }, [enrichState, setEnrichState]);
 
   useEffect(() => {
     refreshStats();
@@ -97,8 +95,7 @@ export default function App() {
   };
 
   return (
-    <SyncContext.Provider value={syncState}>
-      <EnrichContext.Provider value={enrichState}>
+    <>
         <div className="flex h-screen overflow-hidden">
           <nav className="w-sidebar bg-bg-sidebar border-r border-border flex flex-col shrink-0">
             <div
@@ -216,7 +213,6 @@ export default function App() {
           </main>
         </div>
         <Toaster />
-      </EnrichContext.Provider>
-    </SyncContext.Provider>
+    </>
   );
 }

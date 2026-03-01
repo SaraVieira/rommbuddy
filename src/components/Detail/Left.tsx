@@ -6,6 +6,7 @@ import { useState } from "react";
 import ScreenshotThumb from "./ScreenshotThumb";
 import ScreenshotModal from "./ScreenshotModal";
 import { Gamepad2 } from "lucide-react";
+import SectionHeading from "@/components/SectionHeading";
 
 export const LeftPanel = ({ rom }: { rom: RomWithMeta }) => {
   const coverSrc = useProxiedImage(rom?.cover_url ?? null);
@@ -35,9 +36,7 @@ export const LeftPanel = ({ rom }: { rom: RomWithMeta }) => {
       {/* Screenshot Thumbnails */}
       {screenshotUrls && screenshotUrls.length > 0 && (
         <div className="p-[16px_24px] flex flex-col gap-md">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
-            // Screenshots
-          </span>
+          <SectionHeading size="label">Screenshots</SectionHeading>
           <div className="flex gap-md flex-wrap">
             {screenshotUrls.map((url, i) => (
               <ScreenshotThumb

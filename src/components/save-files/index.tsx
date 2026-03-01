@@ -8,6 +8,7 @@ import type { SaveFileInfo } from "../../types";
 import { romSavesAtom } from "../../store/library";
 import SaveFileRow from "./Row";
 import SaveStateRow from "./StateRow";
+import SectionHeading from "@/components/SectionHeading";
 
 export function SaveFiles({
   romId,
@@ -92,9 +93,7 @@ export function SaveFiles({
   if (loading) {
     return (
       <div className="flex flex-col gap-lg">
-        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
-          // Saves
-        </span>
+        <SectionHeading size="sm">Saves</SectionHeading>
         <span className="font-mono text-[10px] text-text-muted">
           Scanning...
         </span>
@@ -106,9 +105,7 @@ export function SaveFiles({
     return (
       <div className="flex flex-col gap-lg">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
-            // Saves
-          </span>
+          <SectionHeading size="sm">Saves</SectionHeading>
           <button
             onClick={handleImport}
             className="flex items-center gap-xs font-mono text-[10px] font-semibold text-text-secondary hover:text-text-primary uppercase"
@@ -130,9 +127,7 @@ export function SaveFiles({
   return (
     <div className="flex flex-col gap-lg">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] font-semibold text-accent tracking-[0.5px] uppercase">
-          // Saves
-        </span>
+        <SectionHeading size="sm">Saves</SectionHeading>
         <div className="flex items-center gap-lg">
           <span className="font-mono text-[10px] text-text-muted uppercase">
             {saves.length} {saves.length === 1 ? "file" : "files"}

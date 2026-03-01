@@ -5,6 +5,7 @@ import type { RomWithMeta } from "../types";
 import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
+import SearchInput from "../components/SearchInput";
 import ViewToggle from "../components/ViewToggle";
 import { useAppEnrich } from "../App";
 import {
@@ -97,9 +98,8 @@ export default function Library() {
         </span>
       </div>
       <div className="flex items-center gap-md mb-3xl flex-wrap shrink-0">
-        <input
-          type="text"
-          className="min-w-40 flex-1 max-w-80 px-lg py-1.5 rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
+        <SearchInput
+          className="min-w-40 flex-1 max-w-80"
           placeholder="Search ROMs..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}

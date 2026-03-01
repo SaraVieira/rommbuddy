@@ -1,0 +1,7 @@
+{
+  "ignore": ["src-tauri/**"],
+  "ignoreDependencies": ["@tauri-apps/plugin-log"],
+  "paths": {
+    "@/*": ["./src/*"]
+  }
+}

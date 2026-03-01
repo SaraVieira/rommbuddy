@@ -9,6 +9,7 @@ import type {
 import { toast } from "sonner";
 import CoreSelect, { type CoreSelectValue, encodeMapping, decodeMapping } from "./CoreSelect";
 import { DEFAULT_CORES } from "../../utils/defaultCores";
+import SectionHeading from "../SectionHeading";
 
 interface CoreMappingsProps {
   platforms: PlatformWithCount[];
@@ -86,9 +87,7 @@ export default function CoreMappings({
   return (
     <section className="mt-3xl">
       <div className="flex items-center justify-between mb-lg">
-        <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide">
-          // Core Mappings
-        </h2>
+        <SectionHeading>Core Mappings</SectionHeading>
         <button
           className={`px-xl py-sm font-mono text-badge uppercase border ${
             hideMapped

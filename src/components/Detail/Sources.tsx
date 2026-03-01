@@ -1,6 +1,7 @@
 import { RomSource, RomWithMeta } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useAsyncInvoke } from "@/hooks/useAsyncInvoke";
+import SectionHeading from "@/components/SectionHeading";
 
 export const Sources = ({ rom }: { rom: RomWithMeta }) => {
   const romId = rom?.id;
@@ -12,9 +13,7 @@ export const Sources = ({ rom }: { rom: RomWithMeta }) => {
 
   return romSources && romSources.length > 1 ? (
     <div className="flex flex-col gap-lg">
-      <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
-        // Available from {romSources.length} sources
-      </span>
+      <SectionHeading size="label">Available from {romSources.length} sources</SectionHeading>
       <div className="flex flex-col gap-md">
         {romSources.map((src) => (
           <div

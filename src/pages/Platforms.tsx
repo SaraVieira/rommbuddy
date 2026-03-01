@@ -8,6 +8,7 @@ import {
   searchAtom,
 } from "../store/library";
 import { platformsAtom } from "../store/platforms";
+import SearchInput from "../components/SearchInput";
 
 export default function Platforms() {
   const navigate = useNavigate();
@@ -40,9 +41,8 @@ export default function Platforms() {
             {platforms.length} platforms configured
           </span>
         </div>
-        <input
-          type="text"
-          className="min-w-[180px] max-w-[280px] flex-1 px-xl py-[10px] rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-nav placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
+        <SearchInput
+          className="min-w-[180px] max-w-[280px] flex-1 text-nav"
           placeholder="Filter platforms..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}

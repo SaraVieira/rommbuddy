@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getPlatformIcon, ICON_MAP } from "../utils/platformIcons";
+import SearchInput from "../components/SearchInput";
 
 type RegistryPlatform = [string, string]; // [slug, display_name]
 
@@ -57,9 +58,8 @@ export default function DebugIcons() {
           </span>
         </div>
         <div className="flex items-end gap-lg">
-          <input
-            type="text"
-            className="min-w-[180px] max-w-[280px] flex-1 px-xl py-[10px] rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-nav placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
+          <SearchInput
+            className="min-w-[180px] max-w-[280px] flex-1 text-nav"
             placeholder="Search platforms..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { PlatformWithCount } from "../../types";
 
 interface PlatformDialogProps {
@@ -15,6 +15,14 @@ export default function PlatformDialog({
   onCancel,
 }: PlatformDialogProps) {
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
 
   const filtered = platforms.filter(
     (p) =>

@@ -5,6 +5,7 @@ import type { RomWithMeta } from "../types";
 import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
+import SearchInput from "../components/SearchInput";
 import ViewToggle from "../components/ViewToggle";
 import { platformsAtom } from "../store/platforms";
 import { usePaginatedRoms } from "../hooks/usePaginatedRoms";
@@ -66,10 +67,9 @@ export default function Search() {
         </span>
       </div>
       <div className="flex items-center gap-md mb-3xl shrink-0">
-        <input
+        <SearchInput
           ref={inputRef}
-          type="text"
-          className="min-w-[160px] flex-1 max-w-[400px] px-lg py-[6px] rounded-none border border-border bg-bg-elevated text-text-primary font-mono text-body placeholder:text-text-dim focus:border-accent outline-none transition-[border-color] duration-150"
+          className="min-w-[160px] flex-1 max-w-[400px]"
           placeholder="Search ROMs..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}

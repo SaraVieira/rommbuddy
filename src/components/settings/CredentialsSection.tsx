@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import SectionHeading from "../SectionHeading";
 
 type ConnectionStatus = "unchecked" | "ok" | "error" | "testing";
 
@@ -108,9 +109,7 @@ export default function CredentialsSection({
 
   return (
     <section className="mt-3xl">
-      <h2 className="font-mono text-section font-semibold text-accent uppercase tracking-wide mb-lg">
-        // {title}
-      </h2>
+      <SectionHeading className="mb-lg">{title}</SectionHeading>
       <div className="card">
         <p className="text-body text-text-muted mb-xl">{description}</p>
         <div className="flex flex-col gap-lg">

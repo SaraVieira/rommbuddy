@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { formatSize } from "@/utils/format";
+import SectionHeading from "@/components/SectionHeading";
 
 export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
   const fileSizeMB = formatSize(rom.file_size);
@@ -84,9 +85,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* Description */}
       {rom.description && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
-            // Description
-          </span>
+          <SectionHeading size="label">Description</SectionHeading>
           <p className="font-mono text-nav text-text-secondary leading-[1.6] m-0">
             {rom.description}
           </p>
@@ -96,9 +95,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* Genres & Themes */}
       {(rom.genres.length > 0 || rom.themes.length > 0) && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
-            // Genres & Themes
-          </span>
+          <SectionHeading size="label">Genres & Themes</SectionHeading>
           <div className="flex flex-wrap gap-md">
             {rom.genres.map((g) => (
               <span
@@ -149,9 +146,7 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       {/* External Links */}
       {externalLinks.length > 0 && (
         <div className="flex flex-col gap-lg">
-          <span className="font-mono text-label font-semibold text-accent tracking-[0.5px] uppercase">
-            // External Links
-          </span>
+          <SectionHeading size="label">External Links</SectionHeading>
           <div className="flex flex-wrap gap-lg">
             {externalLinks.map((link) => (
               <a
