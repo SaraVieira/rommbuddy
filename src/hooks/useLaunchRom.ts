@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { DownloadProgress } from "../types";
-import { useAppToast } from "../App";
+import { toast } from "sonner";
 
 export function useLaunchRom(romId: number, sourceId: number) {
-  const toast = useAppToast();
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
@@ -21,9 +20,9 @@ export function useLaunchRom(romId: number, sourceId: number) {
         saveStateSlot: saveStateSlot ?? null,
         saveStatePath: saveStatePath ?? null,
       });
-      toast(saveStatePath ? "Game launched from save state!" : "Game launched!", "success");
+      toast.success(saveStatePath ? "Game launched from save state!" : "Game launched!");
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setDownloading(false);
       setDownloadProgress(null);

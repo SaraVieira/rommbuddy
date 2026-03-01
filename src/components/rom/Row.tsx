@@ -1,7 +1,9 @@
+import { memo } from "react";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import type { RomWithMeta } from "../../types";
 import { useProxiedImage } from "../../hooks/useProxiedImage";
 import FavoriteButton from "../FavoriteButton";
+import { formatSize } from "../../utils/format";
 
 interface Props {
   rom: RomWithMeta;
@@ -9,14 +11,7 @@ interface Props {
   onToggleFavorite: (romId: number, favorite: boolean) => void;
 }
 
-function formatSize(bytes: number | null): string {
-  if (bytes == null) return "\u2014";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-export default function RomRow({ rom, onClick, onToggleFavorite }: Props) {
+export default memo(function RomRow({ rom, onClick, onToggleFavorite }: Props) {
   const coverSrc = useProxiedImage(rom.cover_url);
 
   return (
@@ -69,4 +64,4 @@ export default function RomRow({ rom, onClick, onToggleFavorite }: Props) {
       </td>
     </tr>
   );
-}
+});

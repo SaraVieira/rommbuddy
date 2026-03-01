@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 mod commands;
 mod db;
 mod dedup;

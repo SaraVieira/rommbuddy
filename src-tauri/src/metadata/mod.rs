@@ -161,106 +161,69 @@ async fn fetch_unenriched_roms(
     Ok(RomRow::find_by_statement(stmt).all(db).await?)
 }
 
-/// Enrich ROMs with metadata using the hash-first pipeline:
-/// 1. Compute MD5 hash
-/// 2. Hasheous API lookup (cached)
-/// 3. IGDB enrichment (if client provided)
-/// 4. `LaunchBox` SQL lookup using verified name
-/// 5. libretro-thumbnails cover art
-pub async fn enrich_roms(
-    platform_id: Option<i64>,
-    search: Option<&str>,
-    db: &DatabaseConnection,
-    on_progress: impl Fn(ScanProgress) + Send,
-    cancel: CancellationToken,
-    igdb_client: Option<&igdb::IgdbClient>,
-    ss_creds: Option<&screenscraper::SsUserCredentials>,
+/// Context shared by the enrichment pipeline.
+struct EnrichContext<'a> {
+    db: &'a DatabaseConnection,
+    http_client: &'a reqwest::Client,
+    igdb_client: Option<&'a igdb::IgdbClient>,
+    ss_creds: Option<&'a screenscraper::SsUserCredentials>,
+    has_launchbox: bool,
+    last_ss_request: tokio::sync::Mutex<std::time::Instant>,
+}
+
+/// Options that differ between batch and single-ROM enrichment.
+struct EnrichOptions {
+    /// Pre-fetched IGDB data (batch optimization). None for single-ROM.
+    igdb_prefetch: Option<igdb::IgdbGameData>,
+    /// Whether to clear caches before enriching (true for single-ROM re-enrich).
+    force_refresh: bool,
+}
+
+/// Insert artwork with dedup (ON CONFLICT DO NOTHING).
+async fn insert_artwork(db: &DatabaseConnection, rom_id: i64, art_type: &str, url: &str) {
+    if let Err(e) = db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO artwork (rom_id, art_type, url) VALUES (?, ?, ?) ON CONFLICT(rom_id, art_type, url) DO NOTHING",
+        [rom_id.into(), art_type.into(), url.into()],
+    ))
+    .await
+    {
+        log::warn!("Failed to insert {art_type} artwork for rom {rom_id}: {e}");
+    }
+}
+
+/// Unified per-ROM enrichment pipeline used by both `enrich_roms` and `enrich_single_rom`.
+async fn enrich_one_rom(
+    ctx: &EnrichContext<'_>,
+    rom: &RomRow,
+    opts: &EnrichOptions,
 ) -> AppResult<()> {
-    // 1. Query ROMs that haven't been enriched yet
-    let roms = fetch_unenriched_roms(db, platform_id, search).await?;
+    let db = ctx.db;
 
-    #[allow(clippy::cast_possible_truncation)]
-    let total = roms.len() as u64;
-    if total == 0 {
-        on_progress(ScanProgress {
-            source_id: -1,
-            total: 0,
-            current: 0,
-            current_item: "All ROMs already enriched.".to_string(),
-        });
-        return Ok(());
-    }
+    // Step 1: Compute hash if missing
+    let md5 = compute_md5_if_needed(db, rom).await;
 
-    let has_launchbox = launchbox::has_imported_db(db).await;
-
-    let http_client = reqwest::Client::builder()
-        .user_agent("romm-buddy/0.1")
-        .build()
-        .unwrap_or_default();
-
-    // IGDB batch optimization: pre-collect all IGDB IDs from hasheous_cache,
-    // batch-fetch in chunks of 10, build a HashMap for O(1) lookup during the loop
-    let mut igdb_batch: HashMap<i64, igdb::IgdbGameData> = HashMap::new();
-    if let Some(client) = igdb_client {
-        // Collect all (rom_id, igdb_game_id) pairs for the ROMs we're enriching
-        let rom_ids: Vec<i64> = roms.iter().map(|r| r.id).collect();
-        let mut igdb_id_to_rom_ids: HashMap<i64, Vec<i64>> = HashMap::new();
-
-        for rom in &roms {
-            if let Some(igdb_id) = query_hasheous_igdb_id(db, rom.id).await {
-                igdb_id_to_rom_ids
-                    .entry(igdb_id)
-                    .or_default()
-                    .push(rom.id);
+    // Step 2: Hasheous lookup
+    let hasheous_result = if opts.force_refresh {
+        // Single-ROM re-enrich: always fetch fresh from API
+        if let Some(ref hash) = md5 {
+            if let Some(result) = hasheous::lookup_by_md5(ctx.http_client, hash).await {
+                hasheous::save_to_cache(db, rom.id, &result).await;
+                Some(result)
+            } else {
+                None
             }
+        } else {
+            None
         }
-
-        // Batch fetch in chunks of 10
-        let all_igdb_ids: Vec<i64> = igdb_id_to_rom_ids.keys().copied().collect();
-        for chunk in all_igdb_ids.chunks(10) {
-            if cancel.is_cancelled() {
-                return Ok(());
-            }
-            match client.fetch_games_by_ids(chunk).await {
-                Ok(games) => {
-                    for game in games {
-                        igdb_batch.insert(game.id, game);
-                    }
-                }
-                Err(e) => {
-                    log::warn!("IGDB batch fetch failed: {e}");
-                }
-            }
-        }
-
-        let _ = rom_ids; // suppress unused warning
-    }
-
-    // 2. Process each ROM
-    for (i, rom) in roms.iter().enumerate() {
-        if cancel.is_cancelled() {
-            return Ok(());
-        }
-
-        #[allow(clippy::cast_possible_truncation)]
-        let current = (i + 1) as u64;
-        on_progress(ScanProgress {
-            source_id: -1,
-            total,
-            current,
-            current_item: rom.name.clone(),
-        });
-
-        // Step 1: Compute hash if missing
-        let md5 = compute_md5_if_needed(db, rom).await;
-
-        // Step 2: Hasheous lookup (check cache first, then API)
-        let hasheous_result = hasheous::get_cached(db, rom.id).await;
-        let hasheous_result = match hasheous_result {
-            Some(cached) => Some(cached),
+    } else {
+        // Batch: check cache first, then API
+        let cached = hasheous::get_cached(db, rom.id).await;
+        match cached {
+            Some(c) => Some(c),
             None => {
                 if let Some(ref hash) = md5 {
-                    if let Some(result) = hasheous::lookup_by_md5(&http_client, hash).await {
+                    if let Some(result) = hasheous::lookup_by_md5(ctx.http_client, hash).await {
                         hasheous::save_to_cache(db, rom.id, &result).await;
                         Some(result)
                     } else {
@@ -270,352 +233,7 @@ pub async fn enrich_roms(
                     None
                 }
             }
-        };
-
-        let hasheous_name = hasheous_result.as_ref().map(|r| r.name.as_str());
-
-        // Upsert metadata from Hasheous if we got a result
-        if let Some(ref result) = hasheous_result {
-            let genres_json =
-                serde_json::to_string(&result.genres).unwrap_or_else(|_| "[]".to_string());
-            if let Err(e) = db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "INSERT INTO metadata (rom_id, description, publisher, genres, release_date, metadata_fetched_at)
-                 VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                 ON CONFLICT(rom_id) DO UPDATE SET
-                   description = COALESCE(excluded.description, metadata.description),
-                   publisher = COALESCE(excluded.publisher, metadata.publisher),
-                   genres = CASE WHEN excluded.genres != '[]' THEN excluded.genres ELSE metadata.genres END,
-                   release_date = COALESCE(excluded.release_date, metadata.release_date),
-                   metadata_fetched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-                [
-                    rom.id.into(),
-                    result.description.clone().into(),
-                    result.publisher.clone().into(),
-                    genres_json.into(),
-                    result.year.clone().into(),
-                ],
-            ))
-            .await
-            {
-                log::warn!("Failed to upsert Hasheous metadata for rom {}: {e}", rom.id);
-            }
         }
-
-        // Step 3: IGDB enrichment (if client provided)
-        if igdb_client.is_some() {
-            // Try to find IGDB data: first from batch, then individual search
-            let igdb_game_id = query_hasheous_igdb_id(db, rom.id).await;
-
-            let igdb_data = if let Some(igdb_id) = igdb_game_id {
-                igdb_batch.get(&igdb_id).cloned()
-            } else {
-                None
-            };
-
-            // Fallback: search by name if no batch data and we have a client
-            let igdb_data = if igdb_data.is_none() {
-                if let Some(client) = igdb_client {
-                    let search_name = hasheous_name.unwrap_or(&rom.name);
-                    match client.search_game(search_name).await {
-                        Ok(result) => result,
-                        Err(e) => {
-                            log::warn!("IGDB search failed for rom {}: {e}", rom.id);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            } else {
-                igdb_data
-            };
-
-            if let Some(ref game) = igdb_data {
-                apply_igdb_data(db, rom.id, game).await;
-            }
-        }
-
-        // Step 4: LaunchBox lookup using verified name (or fall back to ROM name)
-        let lb_game = if has_launchbox {
-            let lookup_name = hasheous_name.unwrap_or(&rom.name);
-            launchbox::find_by_name(db, lookup_name, &rom.platform_slug).await
-        } else {
-            None
-        };
-
-        if let Some(ref lb_game) = lb_game {
-            if let Err(e) = db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "INSERT INTO metadata (rom_id, description, developer, publisher, genres, release_date, rating, metadata_fetched_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                 ON CONFLICT(rom_id) DO UPDATE SET
-                   description = COALESCE(metadata.description, excluded.description),
-                   developer = COALESCE(excluded.developer, metadata.developer),
-                   publisher = COALESCE(metadata.publisher, excluded.publisher),
-                   genres = CASE WHEN metadata.genres = '[]' OR metadata.genres IS NULL THEN excluded.genres ELSE metadata.genres END,
-                   release_date = COALESCE(metadata.release_date, excluded.release_date),
-                   rating = COALESCE(excluded.rating, metadata.rating),
-                   metadata_fetched_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-                [
-                    rom.id.into(),
-                    lb_game.overview.clone().into(),
-                    lb_game.developer.clone().into(),
-                    lb_game.publisher.clone().into(),
-                    lb_game.genres.clone().into(),
-                    lb_game.release_date.clone().into(),
-                    lb_game.community_rating.into(),
-                ],
-            ))
-            .await
-            {
-                log::warn!("Failed to upsert LaunchBox metadata for rom {}: {e}", rom.id);
-            }
-
-            // Try LaunchBox cover if we don't have one yet
-            if rom.has_cover == 0 {
-                if let Some(url) = launchbox::get_image_url(db, &lb_game.database_id).await {
-                    if let Err(e) = db.execute(Statement::from_sql_and_values(
-                        DatabaseBackend::Sqlite,
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'cover', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                        [rom.id.into(), url.into()],
-                    ))
-                    .await
-                    {
-                        log::warn!("Failed to insert LaunchBox artwork for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-        }
-
-        // Step 5: ScreenScraper enrichment (after LaunchBox, before libretro)
-        if let Some(ss_system_id) = rom.screenscraper_id {
-            if !screenscraper::is_cached(db, rom.id).await {
-                match screenscraper::lookup_game(
-                    &http_client,
-                    ss_creds,
-                    md5.as_deref(),
-                    &rom.name,
-                    ss_system_id,
-                )
-                .await
-                {
-                    Ok(Some(ss_data)) => {
-                        // Save raw response to cache
-                        screenscraper::save_to_cache(
-                            db,
-                            rom.id,
-                            ss_data.game_id,
-                            &serde_json::to_string(&ss_data.game_id).unwrap_or_default(),
-                        )
-                        .await;
-
-                        // Apply metadata (only fill NULLs — COALESCE pattern)
-                        apply_screenscraper_metadata(db, rom.id, &ss_data).await;
-
-                        // Always append artwork with ON CONFLICT DO NOTHING
-                        apply_screenscraper_artwork(db, rom.id, &ss_data.media).await;
-                    }
-                    Ok(None) => {
-                        // Cache the miss so we don't re-query
-                        screenscraper::save_to_cache(db, rom.id, None, "").await;
-                    }
-                    Err(e) => {
-                        log::warn!("ScreenScraper lookup failed for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-        }
-
-        // Step 6: libretro thumbnail (if still no cover)
-        // Re-check cover status since LaunchBox/ScreenScraper might have set one
-        let current_has_cover = if rom.has_cover == 0 {
-            let result = db.query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "SELECT COUNT(*) as cnt FROM artwork WHERE rom_id = ? AND art_type = 'cover'",
-                [rom.id.into()],
-            ))
-            .await;
-            result
-                .ok()
-                .flatten()
-                .and_then(|r| r.try_get::<i64>("", "cnt").ok())
-                .unwrap_or(0)
-                > 0
-        } else {
-            true
-        };
-
-        if !current_has_cover {
-            let name = hasheous_name.unwrap_or(&rom.name);
-            if let Some(url) = libretro_thumbnails::build_thumbnail_url(&rom.platform_slug, name) {
-                let exists = http_client
-                    .head(&url)
-                    .send()
-                    .await
-                    .is_ok_and(|r| r.status().is_success());
-
-                if exists {
-                    if let Err(e) = db.execute(Statement::from_sql_and_values(
-                        DatabaseBackend::Sqlite,
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'cover', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                        [rom.id.into(), url.into()],
-                    ))
-                    .await
-                    {
-                        log::warn!("Failed to insert libretro artwork for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-        }
-
-        // Step 6: Screenshot art — collect from all sources (libretro + LaunchBox)
-        {
-            let snap_name = hasheous_name.unwrap_or(&rom.name);
-
-            // libretro Named_Snaps
-            if let Some(url) =
-                libretro_thumbnails::build_snapshot_url(&rom.platform_slug, snap_name)
-            {
-                let exists = http_client
-                    .head(&url)
-                    .send()
-                    .await
-                    .is_ok_and(|r| r.status().is_success());
-                if exists {
-                    if let Err(e) = db.execute(Statement::from_sql_and_values(
-                        DatabaseBackend::Sqlite,
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'screenshot', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                        [rom.id.into(), url.into()],
-                    ))
-                    .await
-                    {
-                        log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-
-            // libretro Named_Titles
-            if let Some(url) =
-                libretro_thumbnails::build_title_url(&rom.platform_slug, snap_name)
-            {
-                let exists = http_client
-                    .head(&url)
-                    .send()
-                    .await
-                    .is_ok_and(|r| r.status().is_success());
-                if exists {
-                    if let Err(e) = db.execute(Statement::from_sql_and_values(
-                        DatabaseBackend::Sqlite,
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'screenshot', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                        [rom.id.into(), url.into()],
-                    ))
-                    .await
-                    {
-                        log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-
-            // LaunchBox screenshots (multiple) — reuse lb_game from Step 3
-            if let Some(ref lb_game) = lb_game {
-                let urls =
-                    launchbox::get_screenshot_urls(db, &lb_game.database_id).await;
-                for url in urls {
-                    if let Err(e) = db.execute(Statement::from_sql_and_values(
-                        DatabaseBackend::Sqlite,
-                        "INSERT INTO artwork (rom_id, art_type, url)
-                         VALUES (?, 'screenshot', ?)
-                         ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                        [rom.id.into(), url.into()],
-                    ))
-                    .await
-                    {
-                        log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
-                    }
-                }
-            }
-        }
-
-        // Mark as enriched if not already
-        if let Err(e) = db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            "INSERT INTO metadata (rom_id, metadata_fetched_at)
-             VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-             ON CONFLICT(rom_id) DO UPDATE SET
-               metadata_fetched_at = COALESCE(metadata.metadata_fetched_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-            [rom.id.into()],
-        ))
-        .await
-        {
-            log::warn!("Failed to mark rom {} as enriched: {e}", rom.id);
-        }
-    }
-
-    Ok(())
-}
-
-/// Enrich a single ROM by ID — runs Hasheous lookup, IGDB, LaunchBox, ScreenScraper, and cover art.
-/// Clears the existing hasheous_cache entry first so fresh data is fetched.
-pub async fn enrich_single_rom(
-    rom_id: i64,
-    db: &DatabaseConnection,
-    igdb_client: Option<&igdb::IgdbClient>,
-    ss_creds: Option<&screenscraper::SsUserCredentials>,
-) -> AppResult<()> {
-    let rom = RomRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Sqlite,
-        "SELECT r.id, r.name, p.slug as platform_slug,
-                (SELECT COUNT(*) FROM artwork WHERE rom_id = r.id AND art_type = 'cover') as has_cover,
-                r.hash_md5,
-                (SELECT s2.source_type FROM source_roms sr2 JOIN sources s2 ON s2.id = sr2.source_id WHERE sr2.rom_id = r.id LIMIT 1) as source_type,
-                (SELECT sr3.source_rom_id FROM source_roms sr3 JOIN sources s3 ON s3.id = sr3.source_id WHERE sr3.rom_id = r.id LIMIT 1) as source_rom_id,
-                p.screenscraper_id
-         FROM roms r
-         JOIN platforms p ON p.id = r.platform_id
-         WHERE r.id = ?",
-        [rom_id.into()],
-    ))
-    .one(db)
-    .await?
-    .ok_or_else(|| AppError::Other(format!("ROM {rom_id} not found")))?;
-
-    // Clear existing hasheous cache so we re-fetch
-    let _ = db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Sqlite,
-        "DELETE FROM hasheous_cache WHERE rom_id = ?",
-        [rom_id.into()],
-    ))
-    .await;
-
-    let http_client = reqwest::Client::builder()
-        .user_agent("romm-buddy/0.1")
-        .build()
-        .unwrap_or_default();
-
-    let has_launchbox = launchbox::has_imported_db(db).await;
-
-    // Step 1: Compute hash if missing
-    let md5 = compute_md5_if_needed(db, &rom).await;
-
-    // Step 2: Hasheous lookup
-    let hasheous_result = if let Some(ref hash) = md5 {
-        if let Some(result) = hasheous::lookup_by_md5(&http_client, hash).await {
-            hasheous::save_to_cache(db, rom.id, &result).await;
-            Some(result)
-        } else {
-            None
-        }
-    } else {
-        None
     };
 
     let hasheous_name = hasheous_result.as_ref().map(|r| r.name.as_str());
@@ -624,7 +242,7 @@ pub async fn enrich_single_rom(
     if let Some(ref result) = hasheous_result {
         let genres_json =
             serde_json::to_string(&result.genres).unwrap_or_else(|_| "[]".to_string());
-        let _ = db.execute(Statement::from_sql_and_values(
+        if let Err(e) = db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO metadata (rom_id, description, publisher, genres, release_date, metadata_fetched_at)
              VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -642,28 +260,35 @@ pub async fn enrich_single_rom(
                 result.year.clone().into(),
             ],
         ))
-        .await;
+        .await
+        {
+            log::warn!("Failed to upsert Hasheous metadata for rom {}: {e}", rom.id);
+        }
     }
 
-    // Step 3: IGDB enrichment (if client provided)
-    if let Some(client) = igdb_client {
-        let igdb_game_id = query_hasheous_igdb_id(db, rom.id).await;
-
-        let igdb_data = if let Some(igdb_id) = igdb_game_id {
-            match client.fetch_games_by_ids(&[igdb_id]).await {
-                Ok(games) => games.into_iter().next(),
-                Err(e) => {
-                    log::warn!("IGDB fetch failed for igdb_id {igdb_id}: {e}");
-                    None
-                }
-            }
+    // Step 3: IGDB enrichment
+    if let Some(client) = ctx.igdb_client {
+        let igdb_data = if let Some(ref prefetched) = opts.igdb_prefetch {
+            Some(prefetched.clone())
         } else {
-            let search_name = hasheous_name.unwrap_or(&rom.name);
-            match client.search_game(search_name).await {
-                Ok(result) => result,
-                Err(e) => {
-                    log::warn!("IGDB search failed for rom {}: {e}", rom.id);
-                    None
+            // Try hasheous IGDB ID first, then name search
+            let igdb_game_id = query_hasheous_igdb_id(db, rom.id).await;
+            if let Some(igdb_id) = igdb_game_id {
+                match client.fetch_games_by_ids(&[igdb_id]).await {
+                    Ok(games) => games.into_iter().next(),
+                    Err(e) => {
+                        log::warn!("IGDB fetch failed for igdb_id {igdb_id}: {e}");
+                        None
+                    }
+                }
+            } else {
+                let search_name = hasheous_name.unwrap_or(&rom.name);
+                match client.search_game(search_name).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        log::warn!("IGDB search failed for rom {}: {e}", rom.id);
+                        None
+                    }
                 }
             }
         };
@@ -674,7 +299,7 @@ pub async fn enrich_single_rom(
     }
 
     // Step 4: LaunchBox lookup
-    let lb_game = if has_launchbox {
+    let lb_game = if ctx.has_launchbox {
         let lookup_name = hasheous_name.unwrap_or(&rom.name);
         launchbox::find_by_name(db, lookup_name, &rom.platform_slug).await
     } else {
@@ -682,7 +307,7 @@ pub async fn enrich_single_rom(
     };
 
     if let Some(ref lb_game) = lb_game {
-        let _ = db.execute(Statement::from_sql_and_values(
+        if let Err(e) = db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "INSERT INTO metadata (rom_id, description, developer, publisher, genres, release_date, rating, metadata_fetched_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -704,63 +329,67 @@ pub async fn enrich_single_rom(
                 lb_game.community_rating.into(),
             ],
         ))
-        .await;
+        .await
+        {
+            log::warn!("Failed to upsert LaunchBox metadata for rom {}: {e}", rom.id);
+        }
 
         if rom.has_cover == 0 {
             if let Some(url) = launchbox::get_image_url(db, &lb_game.database_id).await {
-                let _ = db.execute(Statement::from_sql_and_values(
-                    DatabaseBackend::Sqlite,
-                    "INSERT INTO artwork (rom_id, art_type, url)
-                     VALUES (?, 'cover', ?)
-                     ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                    [rom.id.into(), url.into()],
-                ))
-                .await;
+                insert_artwork(db, rom.id, "cover", &url).await;
             }
         }
     }
 
-    // Step 5: ScreenScraper enrichment (after LaunchBox, before libretro)
+    // Step 5: ScreenScraper enrichment
     if let Some(ss_system_id) = rom.screenscraper_id {
-        // Clear screenscraper cache on re-enrich (same as hasheous)
-        let _ = db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Sqlite,
-            "DELETE FROM screenscraper_cache WHERE rom_id = ?",
-            [rom.id.into()],
-        ))
-        .await;
+        let should_lookup = if opts.force_refresh {
+            // Clear cache on re-enrich
+            let _ = db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "DELETE FROM screenscraper_cache WHERE rom_id = ?",
+                [rom.id.into()],
+            ))
+            .await;
+            true
+        } else {
+            !screenscraper::is_cached(db, rom.id).await
+        };
 
-        match screenscraper::lookup_game(
-            &http_client,
-            ss_creds,
-            md5.as_deref(),
-            &rom.name,
-            ss_system_id,
-        )
-        .await
-        {
-            Ok(Some(ss_data)) => {
-                screenscraper::save_to_cache(
-                    db,
-                    rom.id,
-                    ss_data.game_id,
-                    &serde_json::to_string(&ss_data.game_id).unwrap_or_default(),
-                )
-                .await;
-                apply_screenscraper_metadata(db, rom.id, &ss_data).await;
-                apply_screenscraper_artwork(db, rom.id, &ss_data.media).await;
-            }
-            Ok(None) => {
-                screenscraper::save_to_cache(db, rom.id, None, "").await;
-            }
-            Err(e) => {
-                log::warn!("ScreenScraper lookup failed for rom {}: {e}", rom.id);
+        if should_lookup {
+            match screenscraper::lookup_game(
+                ctx.http_client,
+                ctx.ss_creds,
+                md5.as_deref(),
+                &rom.name,
+                ss_system_id,
+                &ctx.last_ss_request,
+            )
+            .await
+            {
+                Ok(Some(ss_data)) => {
+                    screenscraper::save_to_cache(
+                        db,
+                        rom.id,
+                        ss_data.game_id,
+                        &serde_json::to_string(&ss_data.game_id).unwrap_or_default(),
+                    )
+                    .await;
+                    apply_screenscraper_metadata(db, rom.id, &ss_data).await;
+                    apply_screenscraper_artwork(db, rom.id, &ss_data.media).await;
+                }
+                Ok(None) => {
+                    screenscraper::save_to_cache(db, rom.id, None, "").await;
+                }
+                Err(e) => {
+                    log::warn!("ScreenScraper lookup failed for rom {}: {e}", rom.id);
+                }
             }
         }
     }
 
-    // Step 6: libretro thumbnail if no cover
-    let current_has_cover = {
+    // Step 6: libretro thumbnail (if still no cover)
+    let current_has_cover = if rom.has_cover == 0 {
         let result = db.query_one(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "SELECT COUNT(*) as cnt FROM artwork WHERE rom_id = ? AND art_type = 'cover'",
@@ -773,103 +402,251 @@ pub async fn enrich_single_rom(
             .and_then(|r| r.try_get::<i64>("", "cnt").ok())
             .unwrap_or(0)
             > 0
+    } else {
+        true
     };
 
     if !current_has_cover {
         let name = hasheous_name.unwrap_or(&rom.name);
         if let Some(url) = libretro_thumbnails::build_thumbnail_url(&rom.platform_slug, name) {
-            let exists = http_client
+            let exists = ctx.http_client
                 .head(&url)
                 .send()
                 .await
                 .is_ok_and(|r| r.status().is_success());
             if exists {
-                let _ = db.execute(Statement::from_sql_and_values(
-                    DatabaseBackend::Sqlite,
-                    "INSERT INTO artwork (rom_id, art_type, url)
-                     VALUES (?, 'cover', ?)
-                     ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                    [rom.id.into(), url.into()],
-                ))
-                .await;
+                insert_artwork(db, rom.id, "cover", &url).await;
             }
         }
     }
 
-    // Step 5: Screenshot art — collect from all sources (libretro + LaunchBox)
-    // Clear existing screenshots on re-enrich so we get fresh data
-    let _ = db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Sqlite,
-        "DELETE FROM artwork WHERE rom_id = ? AND art_type = 'screenshot'",
-        [rom.id.into()],
-    ))
-    .await;
+    // Step 7: Screenshot art — collect from all sources (libretro + LaunchBox)
+    if opts.force_refresh {
+        // Clear existing screenshots on re-enrich so we get fresh data
+        let _ = db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "DELETE FROM artwork WHERE rom_id = ? AND art_type = 'screenshot'",
+            [rom.id.into()],
+        ))
+        .await;
+    }
 
     let snap_name = hasheous_name.unwrap_or(&rom.name);
 
-    // libretro Named_Snaps
-    if let Some(url) = libretro_thumbnails::build_snapshot_url(&rom.platform_slug, snap_name) {
-        let exists = http_client
-            .head(&url)
-            .send()
-            .await
-            .is_ok_and(|r| r.status().is_success());
-        if exists {
-            if let Err(e) = db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "INSERT INTO artwork (rom_id, art_type, url)
-                 VALUES (?, 'screenshot', ?)
-                 ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                [rom.id.into(), url.into()],
-            ))
-            .await
-            {
-                log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
-            }
+    // libretro Named_Snaps + Named_Titles — fire HEAD requests concurrently
+    let snap_url = libretro_thumbnails::build_snapshot_url(&rom.platform_slug, snap_name);
+    let title_url = libretro_thumbnails::build_title_url(&rom.platform_slug, snap_name);
+
+    let snap_future = async {
+        if let Some(url) = &snap_url {
+            ctx.http_client.head(url).send().await.is_ok_and(|r| r.status().is_success())
+        } else {
+            false
+        }
+    };
+    let title_future = async {
+        if let Some(url) = &title_url {
+            ctx.http_client.head(url).send().await.is_ok_and(|r| r.status().is_success())
+        } else {
+            false
+        }
+    };
+
+    let (snap_exists, title_exists) = tokio::join!(snap_future, title_future);
+
+    if snap_exists {
+        if let Some(url) = &snap_url {
+            insert_artwork(db, rom.id, "screenshot", url).await;
+        }
+    }
+    if title_exists {
+        if let Some(url) = &title_url {
+            insert_artwork(db, rom.id, "screenshot", url).await;
         }
     }
 
-    // libretro Named_Titles
-    if let Some(url) = libretro_thumbnails::build_title_url(&rom.platform_slug, snap_name) {
-        let exists = http_client
-            .head(&url)
-            .send()
-            .await
-            .is_ok_and(|r| r.status().is_success());
-        if exists {
-            if let Err(e) = db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "INSERT INTO artwork (rom_id, art_type, url)
-                 VALUES (?, 'screenshot', ?)
-                 ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                [rom.id.into(), url.into()],
-            ))
-            .await
-            {
-                log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
-            }
-        }
-    }
-
-    // LaunchBox screenshots (multiple) — reuse lb_game from Step 3
+    // LaunchBox screenshots
     if let Some(ref lb_game) = lb_game {
         let urls = launchbox::get_screenshot_urls(db, &lb_game.database_id).await;
         for url in urls {
-            if let Err(e) = db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                "INSERT INTO artwork (rom_id, art_type, url)
-                 VALUES (?, 'screenshot', ?)
-                 ON CONFLICT(rom_id, art_type, url) DO NOTHING",
-                [rom.id.into(), url.into()],
-            ))
-            .await
-            {
-                log::warn!("Failed to insert screenshot for rom {}: {e}", rom.id);
+            insert_artwork(db, rom.id, "screenshot", &url).await;
+        }
+    }
+
+    // Mark as enriched
+    if let Err(e) = db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO metadata (rom_id, metadata_fetched_at)
+         VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT(rom_id) DO UPDATE SET
+           metadata_fetched_at = COALESCE(metadata.metadata_fetched_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+        [rom.id.into()],
+    ))
+    .await
+    {
+        log::warn!("Failed to mark rom {} as enriched: {e}", rom.id);
+    }
+
+    Ok(())
+}
+
+/// Enrich ROMs with metadata using the hash-first pipeline:
+/// 1. Compute MD5 hash
+/// 2. Hasheous API lookup (cached)
+/// 3. IGDB enrichment (if client provided)
+/// 4. `LaunchBox` SQL lookup using verified name
+/// 5. ScreenScraper enrichment
+/// 6. libretro-thumbnails cover art + screenshots
+pub async fn enrich_roms(
+    platform_id: Option<i64>,
+    search: Option<&str>,
+    db: &DatabaseConnection,
+    on_progress: impl Fn(ScanProgress) + Send,
+    cancel: CancellationToken,
+    igdb_client: Option<&igdb::IgdbClient>,
+    ss_creds: Option<&screenscraper::SsUserCredentials>,
+) -> AppResult<()> {
+    let roms = fetch_unenriched_roms(db, platform_id, search).await?;
+
+    #[allow(clippy::cast_possible_truncation)]
+    let total = roms.len() as u64;
+    if total == 0 {
+        on_progress(ScanProgress {
+            source_id: -1,
+            total: 0,
+            current: 0,
+            current_item: "All ROMs already enriched.".to_string(),
+        });
+        return Ok(());
+    }
+
+    let http_client = reqwest::Client::builder()
+        .user_agent("romm-buddy/0.1")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+
+    let has_launchbox = launchbox::has_imported_db(db).await;
+
+    let ctx = EnrichContext {
+        db,
+        http_client: &http_client,
+        igdb_client,
+        ss_creds,
+        has_launchbox,
+        last_ss_request: tokio::sync::Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(2)),
+    };
+
+    // IGDB batch optimization: pre-collect all IGDB IDs from hasheous_cache,
+    // batch-fetch in chunks of 10, build a HashMap for O(1) lookup during the loop
+    let mut igdb_batch: HashMap<i64, igdb::IgdbGameData> = HashMap::new();
+    if let Some(client) = igdb_client {
+        let mut igdb_id_to_rom_ids: HashMap<i64, Vec<i64>> = HashMap::new();
+        for rom in &roms {
+            if let Some(igdb_id) = query_hasheous_igdb_id(db, rom.id).await {
+                igdb_id_to_rom_ids
+                    .entry(igdb_id)
+                    .or_default()
+                    .push(rom.id);
+            }
+        }
+
+        let all_igdb_ids: Vec<i64> = igdb_id_to_rom_ids.keys().copied().collect();
+        for chunk in all_igdb_ids.chunks(10) {
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+            match client.fetch_games_by_ids(chunk).await {
+                Ok(games) => {
+                    for game in games {
+                        igdb_batch.insert(game.id, game);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("IGDB batch fetch failed: {e}");
+                }
             }
         }
     }
 
+    for (i, rom) in roms.iter().enumerate() {
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        #[allow(clippy::cast_possible_truncation)]
+        let current = (i + 1) as u64;
+        on_progress(ScanProgress {
+            source_id: -1,
+            total,
+            current,
+            current_item: rom.name.clone(),
+        });
+
+        // Look up pre-fetched IGDB data for this ROM
+        let igdb_prefetch = query_hasheous_igdb_id(db, rom.id)
+            .await
+            .and_then(|igdb_id| igdb_batch.get(&igdb_id).cloned());
+
+        let opts = EnrichOptions {
+            igdb_prefetch,
+            force_refresh: false,
+        };
+
+        enrich_one_rom(&ctx, rom, &opts).await?;
+    }
+
     Ok(())
+}
+
+/// Enrich a single ROM by ID — runs the full enrichment pipeline.
+/// Clears existing caches first so fresh data is fetched.
+pub async fn enrich_single_rom(
+    rom_id: i64,
+    db: &DatabaseConnection,
+    igdb_client: Option<&igdb::IgdbClient>,
+    ss_creds: Option<&screenscraper::SsUserCredentials>,
+) -> AppResult<()> {
+    let rom = RomRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        format!("{UNENRICHED_ROM_SELECT} WHERE r.id = ?"),
+        [rom_id.into()],
+    ))
+    .one(db)
+    .await?
+    .ok_or_else(|| AppError::Other(format!("ROM {rom_id} not found")))?;
+
+    // Clear existing hasheous cache so we re-fetch
+    let _ = db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "DELETE FROM hasheous_cache WHERE rom_id = ?",
+        [rom_id.into()],
+    ))
+    .await;
+
+    let http_client = reqwest::Client::builder()
+        .user_agent("romm-buddy/0.1")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+
+    let has_launchbox = launchbox::has_imported_db(db).await;
+
+    let ctx = EnrichContext {
+        db,
+        http_client: &http_client,
+        igdb_client,
+        ss_creds,
+        has_launchbox,
+        last_ss_request: tokio::sync::Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(2)),
+    };
+
+    let opts = EnrichOptions {
+        igdb_prefetch: None,
+        force_refresh: true,
+    };
+
+    enrich_one_rom(&ctx, &rom, &opts).await
 }
 
 /// Apply IGDB game data to database: insert into igdb_cache, update metadata, save artwork.

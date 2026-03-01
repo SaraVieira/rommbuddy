@@ -8,13 +8,11 @@ import type {
   DatDetectResult,
   VerificationStats,
 } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 import ProgressBar from "./ProgressBar";
 import PlatformDialog from "./PlatformDialog";
 
 export default function DatFilesTab() {
-  const toast = useAppToast();
-
   const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
   const [datFiles, setDatFiles] = useState<DatFileInfo[]>([]);
   const [importingDat, setImportingDat] = useState(false);
@@ -66,10 +64,10 @@ export default function DatFilesTab() {
         platformSlug,
         channel,
       });
-      toast("DAT file imported!", "success");
+      toast.success("DAT file imported!");
       loadDatFiles();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setImportingDat(false);
       setDatProgress(null);
@@ -97,7 +95,7 @@ export default function DatFilesTab() {
       }
       await doImportDat(selected as string, result.detected_slug);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 
@@ -113,9 +111,9 @@ export default function DatFilesTab() {
     try {
       await invoke("remove_dat_file", { datFileId: id });
       setDatFiles((prev) => prev.filter((d) => d.id !== id));
-      toast("DAT file removed", "success");
+      toast.success("DAT file removed");
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 
@@ -129,12 +127,11 @@ export default function DatFilesTab() {
         platformId: null,
         channel,
       });
-      toast(
+      toast.success(
         `Verified ${stats.verified}, Unverified ${stats.unverified}, Bad Dumps ${stats.bad_dump}`,
-        "success",
       );
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setVerifying(false);
       setVerifyProgress(null);

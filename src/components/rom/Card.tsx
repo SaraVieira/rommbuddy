@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { CheckCircle, AlertTriangle, Gamepad2, Save } from "lucide-react";
 import { useAtomValue } from "jotai";
 import type { RomWithMeta } from "../../types";
@@ -11,7 +12,7 @@ interface Props {
   onToggleFavorite: (romId: number, favorite: boolean) => void;
 }
 
-export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
+export default memo(function RomCard({ rom, onClick, onToggleFavorite }: Props) {
   const coverSrc = useProxiedImage(rom.cover_url);
   const romSaves = useAtomValue(romSavesAtom);
   const hasSaves = romSaves[rom.id] ?? false;
@@ -79,4 +80,4 @@ export default function RomCard({ rom, onClick, onToggleFavorite }: Props) {
       </div>
     </div>
   );
-}
+});

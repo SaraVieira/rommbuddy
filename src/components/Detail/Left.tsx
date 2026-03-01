@@ -2,6 +2,7 @@ import { useProxiedImage } from "@/hooks/useProxiedImage";
 import { RomWithMeta } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import ScreenshotThumb from "./ScreenshotThumb";
 import ScreenshotModal from "./ScreenshotModal";
 import { Gamepad2 } from "lucide-react";
@@ -11,24 +12,26 @@ export const LeftPanel = ({ rom }: { rom: RomWithMeta }) => {
   const [screenshotUrls, setScreenshotUrls] = useState<string[]>([]);
   const [screenshotModal, setScreenshotModal] = useState<string | null>(null);
 
-  // Fetch screenshot URLs and sources on mount
+  // Fetch screenshot URLs on mount
+  const romId = rom?.id;
   useEffect(() => {
-    if (!rom) return;
+    if (romId == null) return;
     let cancelled = false;
     (async () => {
       try {
         const urls = await invoke<string[]>("get_rom_screenshots", {
-          romId: rom.id,
+          romId,
         });
         if (!cancelled) setScreenshotUrls(urls);
-      } catch {
-        // ignore
+      } catch (e) {
+        console.error("Failed to load screenshots:", e);
+        toast.error(String(e));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [rom?.id]);
+  }, [romId]);
 
   return (
     <div className="w-120 shrink-0 flex flex-col bg-bg-card overflow-y-auto pt-2">

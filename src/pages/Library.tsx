@@ -11,7 +11,8 @@ import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import { useAppToast, useAppEnrich } from "../App";
+import { useAppEnrich } from "../App";
+import { toast } from "sonner";
 import {
   searchInputAtom,
   searchAtom,
@@ -23,7 +24,6 @@ const PAGE_SIZE = 50;
 
 export default function Library() {
   const navigate = useNavigate();
-  const toast = useAppToast();
   const { enriching, startEnrich } = useAppEnrich();
 
   const [roms, setRoms] = useState<RomWithMeta[]>([]);
@@ -54,11 +54,11 @@ export default function Library() {
       setRoms(result.roms);
       setTotal(result.total);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }
-  }, [selectedPlatform, search, toast]);
+  }, [selectedPlatform, search]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore) return;
@@ -76,13 +76,13 @@ export default function Library() {
       setRoms((prev) => [...prev, ...result.roms]);
       setTotal(result.total);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
       // Roll back offset on failure
       offsetRef.current = newOffset - PAGE_SIZE;
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, total, selectedPlatform, search, toast]);
+  }, [loadingMore, total, selectedPlatform, search]);
 
   const hasMore = offsetRef.current + PAGE_SIZE < total;
 

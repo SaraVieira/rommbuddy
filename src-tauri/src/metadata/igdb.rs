@@ -82,6 +82,7 @@ impl IgdbClient {
             client_secret,
             http: reqwest::Client::builder()
                 .user_agent("romm-buddy/0.1")
+                .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
             token: Arc::new(RwLock::new(None)),
@@ -162,17 +163,14 @@ impl IgdbClient {
             .await
             .map_err(|e| AppError::Other(format!("Semaphore error: {e}")))?;
 
-        // Enforce minimum 250ms between requests
+        // Enforce minimum 250ms between requests (single write lock to prevent races)
         {
-            let last = *self.last_request.read().await;
+            let mut last = self.last_request.write().await;
             let elapsed = last.elapsed();
             let min_interval = std::time::Duration::from_millis(250);
             if elapsed < min_interval {
                 tokio::time::sleep(min_interval - elapsed).await;
             }
-        }
-        {
-            let mut last = self.last_request.write().await;
             *last = Instant::now();
         }
 

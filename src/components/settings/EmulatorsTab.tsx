@@ -2,12 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { EmulatorDef, SavePathOverride } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 import SaveDirectories from "./SaveDirectories";
 
 export default function EmulatorsTab() {
-  const toast = useAppToast();
-
   const [emulators, setEmulators] = useState<EmulatorDef[]>([]);
   const [emulatorPaths, setEmulatorPaths] = useState<Record<string, string>>(
     {},
@@ -70,9 +68,9 @@ export default function EmulatorsTab() {
           ...prev,
           [emulatorId]: selected as string,
         }));
-        toast("Emulator path saved", "success");
+        toast.success("Emulator path saved");
       } catch (e) {
-        toast(String(e), "error");
+        toast.error(String(e));
       }
     }
   };

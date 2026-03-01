@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   PlatformWithCount,
@@ -6,21 +6,9 @@ import type {
   CoreMapping,
   EmulatorDef,
 } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 import CoreSelect from "./CoreSelect";
-
-const DEFAULT_CORES: Record<string, string> = {
-  gb: "gambatte_libretro",
-  gbc: "gambatte_libretro",
-  gba: "mgba_libretro",
-  nes: "mesen_libretro",
-  snes: "snes9x_libretro",
-  n64: "mupen64plus_next_libretro",
-  nds: "melonds_libretro",
-  psx: "swanstation_libretro",
-  genesis: "genesis_plus_gx_libretro",
-  arcade: "fbneo_libretro",
-};
+import { DEFAULT_CORES } from "../../utils/defaultCores";
 
 interface CoreMappingsProps {
   platforms: PlatformWithCount[];
@@ -41,14 +29,16 @@ export default function CoreMappings({
   pathValid,
   onRefresh,
 }: CoreMappingsProps) {
-  const toast = useAppToast();
   const [hideMapped, setHideMapped] = useState(false);
+
+  const mappingsByPlatformId = useMemo(
+    () => new Map(mappings.map((m) => [m.platform_id, m])),
+    [mappings],
+  );
 
   if (platforms.length === 0) return null;
 
-  const mappedCount = platforms.filter((p) =>
-    mappings.some((m) => m.platform_id === p.id),
-  ).length;
+  const mappedCount = platforms.filter((p) => mappingsByPlatformId.has(p.id)).length;
   const unmappedCount = platforms.length - mappedCount;
 
   const getMappingValue = (mapping: CoreMapping | undefined): string => {
@@ -71,10 +61,10 @@ export default function CoreMappings({
           corePath: "",
           emulatorType: emulatorId,
         });
-        toast("Emulator mapping saved", "success");
+        toast.success("Emulator mapping saved");
         onRefresh();
       } catch (e) {
-        toast(String(e), "error");
+        toast.error(String(e));
       }
     } else if (value.startsWith("retroarch:")) {
       const coreName = value.slice(10);
@@ -87,10 +77,10 @@ export default function CoreMappings({
           corePath: core.core_path,
           emulatorType: "retroarch",
         });
-        toast("Core mapping saved", "success");
+        toast.success("Core mapping saved");
         onRefresh();
       } catch (e) {
-        toast(String(e), "error");
+        toast.error(String(e));
       }
     }
   };
@@ -135,13 +125,11 @@ export default function CoreMappings({
             {platforms
               .filter((p) =>
                 hideMapped
-                  ? !mappings.some((m) => m.platform_id === p.id)
+                  ? !mappingsByPlatformId.has(p.id)
                   : true,
               )
               .map((platform) => {
-              const mapping = mappings.find(
-                (m) => m.platform_id === platform.id,
-              );
+              const mapping = mappingsByPlatformId.get(platform.id);
               const defaultCore = DEFAULT_CORES[platform.slug];
               const platformEmulators = getEmulatorsForPlatform(platform.slug);
               return (

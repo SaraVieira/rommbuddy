@@ -1,29 +1,32 @@
 import { RomSource, RomWithMeta } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export const Sources = ({ rom }: { rom: RomWithMeta }) => {
   const [romSources, setRomSources] = useState<RomSource[]>([]);
 
-  // Fetch screenshot URLs and sources on mount
+  // Fetch sources on mount
+  const romId = rom?.id;
   useEffect(() => {
-    if (!rom) return;
+    if (romId == null) return;
     let cancelled = false;
 
     (async () => {
       try {
         const sources = await invoke<RomSource[]>("get_rom_sources", {
-          romId: rom.id,
+          romId,
         });
         if (!cancelled) setRomSources(sources);
-      } catch {
-        // ignore
+      } catch (e) {
+        console.error("Failed to load ROM sources:", e);
+        toast.error(String(e));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [rom?.id]);
+  }, [romId]);
 
   return romSources.length > 1 ? (
     <div className="flex flex-col gap-lg">

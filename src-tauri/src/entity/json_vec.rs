@@ -39,7 +39,7 @@ impl From<JsonVec> for Value {
 
 impl TryGetable for JsonVec {
     fn try_get_by<I: sea_orm::ColIdx>(res: &QueryResult, idx: I) -> Result<Self, TryGetError> {
-        let val: Option<String> = res.try_get_by(idx).ok();
+        let val: Option<String> = res.try_get_by(idx)?;
         Ok(match val {
             Some(s) if !s.is_empty() => {
                 JsonVec(serde_json::from_str(&s).unwrap_or_default())

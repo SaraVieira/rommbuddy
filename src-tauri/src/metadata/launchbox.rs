@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Statement,
 };
 
 use crate::entity::{launchbox_games, launchbox_images};
@@ -93,6 +93,7 @@ pub fn metadata_xml_path() -> PathBuf {
 /// Download `Metadata.zip` and extract `Metadata.xml` to cache.
 pub async fn download_and_extract(
     on_progress: impl Fn(ScanProgress) + Send,
+    cancel: tokio_util::sync::CancellationToken,
 ) -> AppResult<()> {
     use futures_util::StreamExt;
     use tokio::io::AsyncWriteExt;
@@ -103,6 +104,7 @@ pub async fn download_and_extract(
     let url = "https://gamesdb.launchbox-app.com/Metadata.zip";
     let client = reqwest::Client::builder()
         .user_agent("romm-buddy/0.1")
+        .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| AppError::Other(e.to_string()))?;
 
@@ -130,6 +132,9 @@ pub async fn download_and_extract(
         let mut stream = resp.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
             let chunk = chunk?;
             #[allow(clippy::cast_possible_truncation)]
             {
@@ -385,28 +390,30 @@ pub async fn import_to_db(
         current_item: format!("Importing {total_games} games..."),
     });
 
-    // Batch insert games
+    // Batch insert games using multi-row VALUES for performance
     let mut count: u64 = 0;
     for chunk in games.chunks(500) {
-        let txn = db.begin().await?;
-        for game in chunk {
-            launchbox_games::ActiveModel {
-                id: sea_orm::ActiveValue::NotSet,
-                database_id: Set(game.database_id.clone()),
-                name: Set(game.name.clone()),
-                name_normalized: Set(game.name_normalized.clone()),
-                platform: Set(game.platform.clone()),
-                overview: Set(game.overview.clone()),
-                developer: Set(game.developer.clone()),
-                publisher: Set(game.publisher.clone()),
-                genres: Set(game.genres.clone()),
-                release_date: Set(game.release_date.clone()),
-                community_rating: Set(game.community_rating),
-            }
-            .insert(&txn)
-            .await?;
+        let mut query = String::from(
+            "INSERT INTO launchbox_games (database_id, name, name_normalized, platform, overview, developer, publisher, genres, release_date, community_rating) VALUES ",
+        );
+        let mut values: Vec<sea_orm::Value> = Vec::with_capacity(chunk.len() * 10);
+        for (i, game) in chunk.iter().enumerate() {
+            if i > 0 { query.push(','); }
+            query.push_str("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            values.extend_from_slice(&[
+                game.database_id.clone().into(),
+                game.name.clone().into(),
+                game.name_normalized.clone().into(),
+                game.platform.clone().into(),
+                game.overview.clone().into(),
+                game.developer.clone().into(),
+                game.publisher.clone().into(),
+                game.genres.clone().into(),
+                game.release_date.clone().into(),
+                game.community_rating.into(),
+            ]);
         }
-        txn.commit().await?;
+        db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite, &query, values)).await?;
         #[allow(clippy::cast_possible_truncation)]
         {
             count += chunk.len() as u64;
@@ -426,21 +433,23 @@ pub async fn import_to_db(
         current_item: format!("Importing {total_images} images..."),
     });
 
-    // Batch insert images
+    // Batch insert images using multi-row VALUES for performance
     count = 0;
     for chunk in images.chunks(1000) {
-        let txn = db.begin().await?;
-        for img in chunk {
-            launchbox_images::ActiveModel {
-                id: sea_orm::ActiveValue::NotSet,
-                database_id: Set(img.database_id.clone()),
-                file_name: Set(img.file_name.clone()),
-                image_type: Set(img.image_type.clone()),
-            }
-            .insert(&txn)
-            .await?;
+        let mut query = String::from(
+            "INSERT INTO launchbox_images (database_id, file_name, image_type) VALUES ",
+        );
+        let mut values: Vec<sea_orm::Value> = Vec::with_capacity(chunk.len() * 3);
+        for (i, img) in chunk.iter().enumerate() {
+            if i > 0 { query.push(','); }
+            query.push_str("(?, ?, ?)");
+            values.extend_from_slice(&[
+                img.database_id.clone().into(),
+                img.file_name.clone().into(),
+                img.image_type.clone().into(),
+            ]);
         }
-        txn.commit().await?;
+        db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite, &query, values)).await?;
         #[allow(clippy::cast_possible_truncation)]
         {
             count += chunk.len() as u64;

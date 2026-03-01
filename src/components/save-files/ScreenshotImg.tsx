@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 
 export default function ScreenshotImg({ path }: { path: string }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     invoke<string>("read_file_base64", { filePath: path })
       .then(setSrc)
-      .catch(() => {});
+      .catch((e) => {
+        console.error("Failed to load screenshot:", e);
+        toast.error(String(e));
+      });
   }, [path]);
   if (!src) {
     return (

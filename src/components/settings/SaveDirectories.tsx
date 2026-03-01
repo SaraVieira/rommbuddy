@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { EmulatorDef, SavePathOverride } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 
 interface SaveDirectoriesProps {
   emulators: EmulatorDef[];
@@ -14,8 +14,6 @@ export default function SaveDirectories({
   savePaths,
   onSavePathsChange,
 }: SaveDirectoriesProps) {
-  const toast = useAppToast();
-
   const handleBrowse = async (
     emulatorId: string,
     dirType: "save_dir" | "state_dir",
@@ -38,9 +36,9 @@ export default function SaveDirectories({
           stateDir: updated.state_dir,
         });
         onSavePathsChange({ ...savePaths, [emulatorId]: updated });
-        toast("Save directory saved", "success");
+        toast.success("Save directory saved");
       } catch (e) {
-        toast(String(e), "error");
+        toast.error(String(e));
       }
     }
   };
@@ -55,9 +53,9 @@ export default function SaveDirectories({
       const next = { ...savePaths };
       delete next[emulatorId];
       onSavePathsChange(next);
-      toast("Reset to default save directories", "success");
+      toast.success("Reset to default save directories");
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

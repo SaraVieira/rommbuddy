@@ -4,7 +4,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { SourceConfig, ConnectionTestResult } from "../../types";
 import { useAtomValue } from "jotai";
 import { localPathAtom, localSourceAtom } from "@/store/sources";
-import { useAppSync, useAppToast } from "@/App";
+import { useAppSync } from "@/App";
+import { toast } from "sonner";
 import SourceConnected from "./SourceConnected";
 
 interface Props {
@@ -13,7 +14,6 @@ interface Props {
 
 export default function LocalSourceSection({ onReload }: Props) {
   const { startSync } = useAppSync();
-  const toast = useAppToast();
   const source = useAtomValue(localSourceAtom);
   const initialPath = useAtomValue(localPathAtom);
   const [editing, setEditing] = useState(false);
@@ -54,10 +54,10 @@ export default function LocalSourceSection({ onReload }: Props) {
     try {
       if (source && editing) {
         await invoke("update_source", { sourceId: source.id, name: sourceName, url: null, credentialsJson: credsJson });
-        toast("Source updated", "success");
+        toast.success("Source updated");
       } else if (!source) {
         await invoke("add_source", { name: sourceName, sourceType: "local", url: null, credentialsJson: credsJson });
-        toast("Source added", "success");
+        toast.success("Source added");
       }
       setEditing(false);
       await onReload();
@@ -66,7 +66,7 @@ export default function LocalSourceSection({ onReload }: Props) {
       if (local) await startSync(local.id);
       await onReload();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

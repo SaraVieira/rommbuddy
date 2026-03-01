@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { ScanProgress } from "../types";
 
 export interface EnrichState {
@@ -9,10 +10,7 @@ export interface EnrichState {
   cancelEnrich: () => Promise<void>;
 }
 
-export function useEnrichState(
-  toast: (message: string, type?: "success" | "error" | "info") => void,
-  onComplete?: () => void,
-): EnrichState {
+export function useEnrichState(onComplete?: () => void): EnrichState {
   const [enriching, setEnriching] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const enrichingRef = useRef(false);
@@ -38,17 +36,17 @@ export function useEnrichState(
           search: search || null,
           channel,
         });
-        toast("Metadata enrichment complete!", "success");
+        toast.success("Metadata enrichment complete!");
         onComplete?.();
       } catch (e) {
-        toast(`Metadata enrichment failed: ${e}`, "error");
+        toast.error(`Metadata enrichment failed: ${e}`);
       } finally {
         enrichingRef.current = false;
         setEnriching(false);
         setProgress(null);
       }
     },
-    [toast, onComplete],
+    [onComplete],
   );
 
   const cancelEnrich = useCallback(async () => {

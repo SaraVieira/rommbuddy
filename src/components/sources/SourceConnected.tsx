@@ -2,7 +2,8 @@ import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SourceConfig } from "../../types";
 import ProgressBar from "../ProgressBar";
-import { useAppSync, useAppToast } from "../../App";
+import { useAppSync } from "../../App";
+import { toast } from "sonner";
 
 interface SourceConnectedProps {
   source: SourceConfig;
@@ -13,7 +14,6 @@ interface SourceConnectedProps {
 
 export default function SourceConnected({ source, subtitle, onEdit, onReload }: SourceConnectedProps) {
   const { syncing, progress: syncProgress, startSync, cancelSync } = useAppSync();
-  const toast = useAppToast();
 
   const isSyncing = syncing && syncProgress && syncProgress.source_id === source.id;
 
@@ -26,12 +26,12 @@ export default function SourceConnected({ source, subtitle, onEdit, onReload }: 
     if (!confirm("This will remove the source and all its synced ROMs from your library.")) return;
     try {
       await invoke("remove_source", { sourceId: source.id });
-      toast("Source removed", "success");
+      toast.success("Source removed");
       await onReload();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
-  }, [source, toast, onReload]);
+  }, [source, onReload]);
 
   return (
     <div>

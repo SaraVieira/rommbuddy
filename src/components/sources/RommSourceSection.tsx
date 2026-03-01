@@ -9,7 +9,8 @@ import {
   rommUrlAtom,
   rommUsernameAtom,
 } from "@/store/sources";
-import { useAppSync, useAppToast } from "@/App";
+import { useAppSync } from "@/App";
+import { toast } from "sonner";
 import SourceConnected from "./SourceConnected";
 
 interface Props {
@@ -18,7 +19,6 @@ interface Props {
 
 export default function RommSourceSection({ onReload }: Props) {
   const { startSync } = useAppSync();
-  const toast = useAppToast();
   const source = useAtomValue(rommSourceAtom);
   const initialName = useAtomValue(rommNameAtom);
   const initialUrl = useAtomValue(rommUrlAtom);
@@ -55,10 +55,10 @@ export default function RommSourceSection({ onReload }: Props) {
     try {
       if (source && editing) {
         await invoke("update_source", { sourceId: source.id, name: sourceName, url, credentialsJson: credsJson });
-        toast("Source updated", "success");
+        toast.success("Source updated");
       } else if (!source) {
         await invoke("add_source", { name: sourceName, sourceType: "romm", url, credentialsJson: credsJson });
-        toast("Source added", "success");
+        toast.success("Source added");
       }
       setEditing(false);
       await onReload();
@@ -67,7 +67,7 @@ export default function RommSourceSection({ onReload }: Props) {
       if (romm) await startSync(romm.id);
       await onReload();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

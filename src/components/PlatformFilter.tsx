@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -28,9 +28,8 @@ export default function PlatformFilter({
   onSelect,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const total = platforms.reduce((sum, p) => sum + p.rom_count, 0);
-
-  const selectedPlatform = platforms.find((p) => p.id === selected);
+  const total = useMemo(() => platforms.reduce((sum, p) => sum + p.rom_count, 0), [platforms]);
+  const selectedPlatform = useMemo(() => platforms.find((p) => p.id === selected), [platforms, selected]);
   const label = selectedPlatform
     ? `${selectedPlatform.name} (${selectedPlatform.rom_count})`
     : `All Platforms (${total})`;

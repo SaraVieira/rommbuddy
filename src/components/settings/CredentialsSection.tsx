@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 
 type ConnectionStatus = "unchecked" | "ok" | "error" | "testing";
 
@@ -40,10 +40,8 @@ export default function CredentialsSection({
   testParamMapping,
   loadedMessage,
 }: CredentialsSectionProps) {
-  const toast = useAppToast();
-
   const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(fields.map((f) => [f.key, ""])),
+    () => Object.fromEntries(fields.map((f) => [f.key, ""])),
   );
   const [status, setStatus] = useState<ConnectionStatus>("unchecked");
   const [statusMessage, setStatusMessage] = useState("");
@@ -82,9 +80,9 @@ export default function CredentialsSection({
   const handleSave = async () => {
     try {
       await invoke(setCommand, buildParams(saveParamMapping));
-      toast(`${title} credentials saved`, "success");
+      toast.success(`${title} credentials saved`);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

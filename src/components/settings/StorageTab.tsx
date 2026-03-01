@@ -1,23 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CacheInfo } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
+import { formatSize } from "../../utils/format";
 
 const EVICTION_OPTIONS = [3, 7, 14, 30] as const;
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / 1024 ** i;
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
 export default function StorageTab() {
-  const toast = useAppToast();
   const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null);
   const [evictionDays, setEvictionDays] = useState(7);
   const [loading, setLoading] = useState(true);
@@ -45,29 +34,29 @@ export default function StorageTab() {
     setEvictionDays(days);
     try {
       await invoke("set_cache_eviction_days", { days });
-      toast(`Auto-cleanup set to ${days} days`, "success");
+      toast.success(`Auto-cleanup set to ${days} days`);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 
   const handleClearAll = async () => {
     try {
       await invoke("clear_all_cache");
-      toast("Cache cleared", "success");
+      toast.success("Cache cleared");
       loadCacheInfo();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 
   const handleClearFile = async (fileName: string) => {
     try {
       await invoke("clear_cache_files", { fileNames: [fileName] });
-      toast("File removed from cache", "success");
+      toast.success("File removed from cache");
       loadCacheInfo();
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

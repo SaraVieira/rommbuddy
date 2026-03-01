@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getPlatformIcon, ICON_MAP } from "../utils/platformIcons";
 
@@ -13,20 +13,23 @@ export default function DebugIcons() {
     invoke<RegistryPlatform[]>("get_all_registry_platforms").then(setPlatforms);
   }, []);
 
-  const items = [...platforms].sort((a, b) => a[1].localeCompare(b[1])).map(([slug, displayName]) => {
-    const inMap = slug in ICON_MAP;
-    const iconFile = inMap ? ICON_MAP[slug] : undefined;
-    const hasIcon = !!iconFile;
-    return {
-      slug,
-      displayName,
-      iconPath: getPlatformIcon(slug),
-      hasIcon,
-    };
-  });
-
-  const missing = items.filter((i) => !i.hasIcon);
-  const hasIcon = items.filter((i) => i.hasIcon);
+  const { items, missing, hasIcon } = useMemo(() => {
+    const sorted = [...platforms].sort((a, b) => a[1].localeCompare(b[1]));
+    const items: { slug: string; displayName: string; iconPath: string | null; hasIcon: boolean }[] = [];
+    const missing: typeof items = [];
+    const hasIcon: typeof items = [];
+    for (const [slug, displayName] of sorted) {
+      const item = {
+        slug,
+        displayName,
+        iconPath: getPlatformIcon(slug),
+        hasIcon: slug in ICON_MAP,
+      };
+      items.push(item);
+      (item.hasIcon ? hasIcon : missing).push(item);
+    }
+    return { items, missing, hasIcon };
+  }, [platforms]);
 
   const byFilter =
     filter === "missing" ? missing : filter === "has-icon" ? hasIcon : items;

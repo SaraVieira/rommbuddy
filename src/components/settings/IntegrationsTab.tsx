@@ -1,13 +1,11 @@
 import { useState, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import type { ScanProgress } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 import ProgressBar from "./ProgressBar";
 import CredentialsSection from "./CredentialsSection";
 
 export default function IntegrationsTab() {
-  const toast = useAppToast();
-
   const [updatingMetadataDb, setUpdatingMetadataDb] = useState(false);
   const [metadataDbProgress, setMetadataDbProgress] =
     useState<ScanProgress | null>(null);
@@ -20,14 +18,14 @@ export default function IntegrationsTab() {
       const channel = new Channel<ScanProgress>();
       channel.onmessage = (p) => setMetadataDbProgress(p);
       await invoke("update_launchbox_db", { channel });
-      toast("Metadata database updated!", "success");
+      toast.success("Metadata database updated!");
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setUpdatingMetadataDb(false);
       setMetadataDbProgress(null);
     }
-  }, [updatingMetadataDb, toast]);
+  }, [updatingMetadataDb]);
 
   return (
     <>

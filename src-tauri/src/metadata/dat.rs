@@ -4,11 +4,11 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter, Statement,
+    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::entity::{dat_entries, dat_files, roms};
+use crate::entity::{dat_entries, dat_files};
 use crate::error::{AppError, AppResult};
 use crate::hash;
 use crate::models::ScanProgress;
@@ -90,10 +90,11 @@ pub fn parse_dat_file(path: &Path) -> AppResult<ParsedDat> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                match tag.as_str() {
-                    "header" => section = Section::Header,
-                    "game" | "machine" => {
+                let name = e.name();
+                let tag_bytes = name.as_ref();
+                match tag_bytes {
+                    b"header" => section = Section::Header,
+                    b"game" | b"machine" => {
                         section = Section::Game;
                         current_game_name.clear();
                         // Get game name from attribute
@@ -107,11 +108,10 @@ pub fn parse_dat_file(path: &Path) -> AppResult<ParsedDat> {
                     }
                     _ => {}
                 }
-                current_element = tag;
+                current_element = String::from_utf8_lossy(tag_bytes).into_owned();
             }
             Ok(Event::Empty(e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if tag == "rom" && section == Section::Game {
+                if e.name().as_ref() == b"rom" && section == Section::Game {
                     let mut entry = DatEntry {
                         game_name: current_game_name.clone(),
                         rom_name: String::new(),
@@ -179,10 +179,8 @@ pub fn parse_dat_file(path: &Path) -> AppResult<ParsedDat> {
                 }
             }
             Ok(Event::End(e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                match tag.as_str() {
-                    "header" => section = Section::None,
-                    "game" | "machine" => section = Section::None,
+                match e.name().as_ref() {
+                    b"header" | b"game" | b"machine" => section = Section::None,
                     _ => {}
                 }
             }
@@ -485,28 +483,45 @@ pub async fn get_verification_stats(
     db: &DatabaseConnection,
     platform_id: Option<i64>,
 ) -> AppResult<VerificationStats> {
-    let mut base = roms::Entity::find();
-    if let Some(pid) = platform_id {
-        base = base.filter(roms::Column::PlatformId.eq(pid));
+    let (sql, values) = if let Some(pid) = platform_id {
+        (
+            "SELECT \
+                SUM(CASE WHEN verification_status = 'verified' THEN 1 ELSE 0 END) as verified, \
+                SUM(CASE WHEN verification_status = 'unverified' THEN 1 ELSE 0 END) as unverified, \
+                SUM(CASE WHEN verification_status = 'bad_dump' THEN 1 ELSE 0 END) as bad_dump, \
+                SUM(CASE WHEN verification_status IS NULL THEN 1 ELSE 0 END) as not_checked \
+            FROM roms WHERE platform_id = ?",
+            vec![sea_orm::Value::from(pid)],
+        )
+    } else {
+        (
+            "SELECT \
+                SUM(CASE WHEN verification_status = 'verified' THEN 1 ELSE 0 END) as verified, \
+                SUM(CASE WHEN verification_status = 'unverified' THEN 1 ELSE 0 END) as unverified, \
+                SUM(CASE WHEN verification_status = 'bad_dump' THEN 1 ELSE 0 END) as bad_dump, \
+                SUM(CASE WHEN verification_status IS NULL THEN 1 ELSE 0 END) as not_checked \
+            FROM roms",
+            vec![],
+        )
+    };
+
+    let row = db
+        .query_one(Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values))
+        .await?;
+
+    if let Some(row) = row {
+        Ok(VerificationStats {
+            verified: row.try_get::<i64>("", "verified").unwrap_or(0),
+            unverified: row.try_get::<i64>("", "unverified").unwrap_or(0),
+            bad_dump: row.try_get::<i64>("", "bad_dump").unwrap_or(0),
+            not_checked: row.try_get::<i64>("", "not_checked").unwrap_or(0),
+        })
+    } else {
+        Ok(VerificationStats {
+            verified: 0,
+            unverified: 0,
+            bad_dump: 0,
+            not_checked: 0,
+        })
     }
-
-    let verified = base.clone()
-        .filter(roms::Column::VerificationStatus.eq("verified"))
-        .count(db).await? as i64;
-    let unverified = base.clone()
-        .filter(roms::Column::VerificationStatus.eq("unverified"))
-        .count(db).await? as i64;
-    let bad_dump = base.clone()
-        .filter(roms::Column::VerificationStatus.eq("bad_dump"))
-        .count(db).await? as i64;
-    let not_checked = base
-        .filter(roms::Column::VerificationStatus.is_null())
-        .count(db).await? as i64;
-
-    Ok(VerificationStats {
-        verified,
-        unverified,
-        bad_dump,
-        not_checked,
-    })
 }

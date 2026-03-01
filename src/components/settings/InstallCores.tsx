@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CoreInfo } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 
 interface InstallCoresProps {
   retroarchPath: string;
@@ -12,8 +12,6 @@ export default function InstallCores({
   retroarchPath,
   onCoresChanged,
 }: InstallCoresProps) {
-  const toast = useAppToast();
-
   const [availableCores, setAvailableCores] = useState<CoreInfo[]>([]);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [installingCore, setInstallingCore] = useState<string | null>(null);
@@ -27,7 +25,7 @@ export default function InstallCores({
       });
       setAvailableCores(available);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setLoadingAvailable(false);
     }
@@ -37,14 +35,14 @@ export default function InstallCores({
     setInstallingCore(coreName);
     try {
       await invoke("install_core", { retroarchPath, coreName });
-      toast(`Installed ${coreName}`, "success");
+      toast.success(`Installed ${coreName}`);
       const detected: CoreInfo[] = await invoke("detect_cores", {
         retroarchPath,
       });
       onCoresChanged(detected);
       setAvailableCores((prev) => prev.filter((c) => c.core_name !== coreName));
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setInstallingCore(null);
     }

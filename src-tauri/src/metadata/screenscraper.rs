@@ -1,6 +1,7 @@
 use reqwest::Client;
 use sea_orm::DatabaseConnection;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 
@@ -101,9 +102,18 @@ pub async fn lookup_game(
     md5: Option<&str>,
     rom_name: &str,
     system_id: i64,
+    last_request: &Mutex<Instant>,
 ) -> AppResult<Option<SsGameData>> {
-    // Rate limit: 1 request per second
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // Rate limit: 1 request per second (timestamp-based, skip if enough time elapsed)
+    {
+        let mut last = last_request.lock().await;
+        let elapsed = last.elapsed();
+        let min_interval = Duration::from_secs(1);
+        if elapsed < min_interval {
+            tokio::time::sleep(min_interval - elapsed).await;
+        }
+        *last = Instant::now();
+    }
 
     let mut params: Vec<(&str, String)> = vec![
         ("devid", DEV_ID.to_string()),

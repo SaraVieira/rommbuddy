@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, Play, Download, RefreshCw } from "lucide-react";
 import type { RomWithMeta } from "../types";
-import { useAppToast } from "../App";
+import { toast } from "sonner";
 import ProgressBar from "../components/ProgressBar";
 import FavoriteButton from "../components/FavoriteButton";
 import AchievementsList from "../components/achievements/AchievementsList";
@@ -18,7 +18,6 @@ export default function RomDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const toast = useAppToast();
   const initialRom = location.state?.rom as RomWithMeta | undefined;
 
   const [rom, setRom] = useState<RomWithMeta | undefined>(initialRom);
@@ -36,8 +35,9 @@ export default function RomDetailPage() {
           romId: Number(id),
         });
         if (!cancelled) setRom(fetched);
-      } catch {
-        // ROM not found
+      } catch (e) {
+        console.error("Failed to load ROM:", e);
+        if (!cancelled) toast.error(String(e));
       } finally {
         if (!cancelled) setLoadingRom(false);
       }
@@ -47,12 +47,13 @@ export default function RomDetailPage() {
     };
   }, [id, initialRom]);
 
+  const platformId = rom?.platform_id;
   useEffect(() => {
-    if (!rom) return;
-    invoke<boolean>("has_core_mapping", { platformId: rom.platform_id }).then(
+    if (platformId == null) return;
+    invoke<boolean>("has_core_mapping", { platformId }).then(
       setHasCore,
     ).catch(() => setHasCore(false));
-  }, [rom?.platform_id]);
+  }, [platformId]);
 
   const { downloading, downloadProgress, launch } = useLaunchRom(
     rom?.id ?? 0,
@@ -90,9 +91,9 @@ export default function RomDetailPage() {
         romId: rom.id,
       });
       setRom(updated);
-      toast("Metadata refreshed", "success");
+      toast.success("Metadata refreshed");
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setEnriching(false);
     }

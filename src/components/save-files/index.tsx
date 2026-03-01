@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useSetAtom } from "jotai";
 import { Upload } from "lucide-react";
+import { toast } from "sonner";
 import type { SaveFileInfo } from "../../types";
 import { romSavesAtom } from "../../store/library";
 import SaveFileRow from "./Row";
@@ -24,8 +25,9 @@ export function SaveFiles({
       const result = await invoke<SaveFileInfo[]>("get_rom_saves", { romId });
       setSaves(result);
       setRomSaves((prev) => ({ ...prev, [romId]: result.length > 0 }));
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("Failed to load saves:", e);
+      toast.error(String(e));
     }
   };
 
@@ -49,6 +51,7 @@ export function SaveFiles({
       setRomSaves((prev) => ({ ...prev, [romId]: saves.length > 1 }));
     } catch (e) {
       console.error("Delete failed:", e);
+      toast.error(String(e));
     }
   };
 
@@ -65,6 +68,7 @@ export function SaveFiles({
         });
       } catch (e) {
         console.error("Export failed:", e);
+        toast.error(String(e));
       }
     }
   };
@@ -87,6 +91,7 @@ export function SaveFiles({
         await fetchSaves();
       } catch (e) {
         console.error("Import failed:", e);
+        toast.error(String(e));
       }
     }
   };

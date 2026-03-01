@@ -294,7 +294,7 @@ pub async fn sync_source(
         .0
         .lock()
         .await
-        .insert(source_id, cancel.clone());
+        .insert(CancelKey::Source(source_id), cancel.clone());
 
     let db_ref = db.inner();
 
@@ -337,7 +337,7 @@ pub async fn sync_source(
         }
     };
 
-    cancel_tokens.0.lock().await.remove(&source_id);
+    cancel_tokens.0.lock().await.remove(&CancelKey::Source(source_id));
     result
 }
 
@@ -346,7 +346,7 @@ pub async fn cancel_sync(
     cancel_tokens: State<'_, CancelTokenMap>,
     source_id: i64,
 ) -> AppResult<()> {
-    if let Some(token) = cancel_tokens.0.lock().await.get(&source_id) {
+    if let Some(token) = cancel_tokens.0.lock().await.get(&CancelKey::Source(source_id)) {
         token.cancel();
     }
     Ok(())
@@ -754,7 +754,21 @@ pub async fn proxy_image(
             .and_then(|v| v.to_str().ok())
             .unwrap_or("image/jpeg")
             .to_string();
+        const MAX_IMAGE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+        if let Some(len) = resp.content_length() {
+            if len > MAX_IMAGE_SIZE {
+                return Err(crate::error::AppError::Other(format!(
+                    "Image too large: {len} bytes (max {MAX_IMAGE_SIZE})"
+                )));
+            }
+        }
         let bytes = resp.bytes().await?;
+        if bytes.len() as u64 > MAX_IMAGE_SIZE {
+            return Err(crate::error::AppError::Other(format!(
+                "Image too large: {} bytes (max {MAX_IMAGE_SIZE})",
+                bytes.len()
+            )));
+        }
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         Ok(format!("data:{content_type};base64,{b64}"))
     }
@@ -1475,28 +1489,42 @@ pub async fn install_core(retroarch_path: String, core_name: String) -> AppResul
     })
 }
 
+/// Key for the cancellation token map — avoids magic sentinel i64 values.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CancelKey {
+    Source(i64),
+    Metadata,
+    Verification,
+}
+
 /// Managed state for sync cancellation tokens.
-pub struct CancelTokenMap(pub tokio::sync::Mutex<HashMap<i64, CancellationToken>>);
+pub struct CancelTokenMap(pub tokio::sync::Mutex<HashMap<CancelKey, CancellationToken>>);
 
 // -- Metadata enrichment commands --
 
 #[tauri::command]
 pub async fn update_launchbox_db(
     db: State<'_, DatabaseConnection>,
+    cancel_tokens: State<'_, CancelTokenMap>,
     channel: Channel<ScanProgress>,
 ) -> AppResult<()> {
+    let cancel = CancellationToken::new();
+    cancel_tokens.0.lock().await.insert(CancelKey::Metadata, cancel.clone());
+
     // Download and extract Metadata.xml
     let channel_clone = channel.clone();
     crate::metadata::launchbox::download_and_extract(move |progress| {
         let _ = channel_clone.send(progress);
-    })
+    }, cancel.clone())
     .await?;
 
     // Import into SQLite tables
-    crate::metadata::launchbox::import_to_db(db.inner(), move |progress| {
+    let result = crate::metadata::launchbox::import_to_db(db.inner(), move |progress| {
         let _ = channel.send(progress);
     })
-    .await
+    .await;
+    cancel_tokens.0.lock().await.remove(&CancelKey::Metadata);
+    result
 }
 
 #[tauri::command]
@@ -1508,9 +1536,8 @@ pub async fn fetch_metadata(
     search: Option<String>,
     channel: Channel<ScanProgress>,
 ) -> AppResult<()> {
-    // Use a fixed key (-1) for metadata enrichment cancellation
     let cancel = CancellationToken::new();
-    cancel_tokens.0.lock().await.insert(-1, cancel.clone());
+    cancel_tokens.0.lock().await.insert(CancelKey::Metadata, cancel.clone());
 
     // Read IGDB credentials and construct client if available
     let igdb_client = read_igdb_client_from_store(&app);
@@ -1531,7 +1558,7 @@ pub async fn fetch_metadata(
     )
     .await;
 
-    cancel_tokens.0.lock().await.remove(&-1);
+    cancel_tokens.0.lock().await.remove(&CancelKey::Metadata);
     result
 }
 
@@ -1539,7 +1566,7 @@ pub async fn fetch_metadata(
 pub async fn cancel_metadata(
     cancel_tokens: State<'_, CancelTokenMap>,
 ) -> AppResult<()> {
-    if let Some(token) = cancel_tokens.0.lock().await.get(&-1) {
+    if let Some(token) = cancel_tokens.0.lock().await.get(&CancelKey::Metadata) {
         token.cancel();
     }
     Ok(())
@@ -1846,7 +1873,10 @@ pub async fn set_ra_credentials(
 
 #[tauri::command]
 pub async fn test_ra_connection(username: String, api_key: String) -> AppResult<RaTestResult> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
     Ok(crate::retroachievements::test_connection(&client, &username, &api_key).await)
 }
 
@@ -1868,7 +1898,10 @@ pub async fn get_achievements(
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .ok_or_else(|| AppError::Other("RA API key not configured".into()))?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
 
     use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
@@ -2108,12 +2141,10 @@ pub async fn verify_library(
     platform_id: Option<i64>,
     channel: Channel<ScanProgress>,
 ) -> AppResult<crate::metadata::dat::VerificationStats> {
-    // Use -2 as a sentinel key for verification cancellation
-    const VERIFY_KEY: i64 = -2;
     let cancel = CancellationToken::new();
     {
         let mut map = cancel_map.0.lock().await;
-        map.insert(VERIFY_KEY, cancel.clone());
+        map.insert(CancelKey::Verification, cancel.clone());
     }
     let result = crate::metadata::dat::verify_roms(
         db.inner(),
@@ -2124,7 +2155,7 @@ pub async fn verify_library(
     .await;
     {
         let mut map = cancel_map.0.lock().await;
-        map.remove(&VERIFY_KEY);
+        map.remove(&CancelKey::Verification);
     }
     result
 }
@@ -2133,9 +2164,8 @@ pub async fn verify_library(
 pub async fn cancel_verification(
     cancel_map: State<'_, CancelTokenMap>,
 ) -> AppResult<()> {
-    const VERIFY_KEY: i64 = -2;
     let map = cancel_map.0.lock().await;
-    if let Some(token) = map.get(&VERIFY_KEY) {
+    if let Some(token) = map.get(&CancelKey::Verification) {
         token.cancel();
     }
     Ok(())
@@ -2297,6 +2327,7 @@ pub async fn test_ss_connection(
 ) -> AppResult<SsTestResult> {
     let client = reqwest::Client::builder()
         .user_agent("romm-buddy/0.1")
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap_or_default();
     let creds = crate::metadata::screenscraper::SsUserCredentials {
@@ -2486,24 +2517,26 @@ pub async fn set_save_path(
 
 #[tauri::command]
 pub async fn delete_save_file(file_path: String) -> AppResult<()> {
-    let path = std::path::Path::new(&file_path);
+    let path = std::path::PathBuf::from(&file_path);
     if !path.is_file() {
         return Err(AppError::Other(format!("File not found: {file_path}")));
     }
-    std::fs::remove_file(path)
+    tokio::fs::remove_file(&path)
+        .await
         .map_err(|e| AppError::Other(format!("Failed to delete: {e}")))?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn export_save_file(source_path: String, dest_path: String) -> AppResult<()> {
-    let src = std::path::Path::new(&source_path);
+    let src = std::path::PathBuf::from(&source_path);
     if !src.is_file() {
         return Err(AppError::Other(format!(
             "Source file not found: {source_path}"
         )));
     }
-    std::fs::copy(src, &dest_path)
+    tokio::fs::copy(&src, &dest_path)
+        .await
         .map_err(|e| AppError::Other(format!("Failed to export: {e}")))?;
     Ok(())
 }
@@ -2514,14 +2547,15 @@ pub async fn import_save_file(
     dest_dir: String,
     file_name: String,
 ) -> AppResult<()> {
-    let src = std::path::Path::new(&source_path);
+    let src = std::path::PathBuf::from(&source_path);
     if !src.is_file() {
         return Err(AppError::Other(format!(
             "Source file not found: {source_path}"
         )));
     }
     let dest = std::path::Path::new(&dest_dir).join(&file_name);
-    std::fs::copy(src, &dest)
+    tokio::fs::copy(&src, &dest)
+        .await
         .map_err(|e| AppError::Other(format!("Failed to import: {e}")))?;
     Ok(())
 }
@@ -2529,7 +2563,8 @@ pub async fn import_save_file(
 #[tauri::command]
 pub async fn read_file_base64(file_path: String) -> AppResult<String> {
     use base64::Engine;
-    let bytes = std::fs::read(&file_path)
+    let bytes = tokio::fs::read(&file_path)
+        .await
         .map_err(|e| AppError::Other(format!("Failed to read file: {e}")))?;
     Ok(format!(
         "data:image/png;base64,{}",
@@ -2544,38 +2579,50 @@ pub async fn get_cache_info(db: State<'_, DatabaseConnection>) -> AppResult<Cach
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
     let cache_dir = rom_cache_dir();
+
+    // Collect file info in a blocking task to avoid stalling the async runtime
+    let file_entries: Vec<(String, u64)> = tokio::task::spawn_blocking(move || {
+        let mut entries = Vec::new();
+        if let Ok(dir_entries) = std::fs::read_dir(&cache_dir) {
+            for entry in dir_entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                if file_name.starts_with('.') && file_name.ends_with(".part") {
+                    continue;
+                }
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                entries.push((file_name, size));
+            }
+        }
+        entries
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Task join error: {e}")))?;
+
     let mut files = Vec::new();
     let mut total_size: u64 = 0;
 
-    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            if file_name.starts_with('.') && file_name.ends_with(".part") {
-                continue;
-            }
-            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            total_size += size;
+    for (file_name, size) in file_entries {
+        total_size += size;
 
-            let last_played: Option<String> = db.inner()
-                .query_one(Statement::from_sql_and_values(
-                    DatabaseBackend::Sqlite,
-                    "SELECT MAX(l.last_played_at) as last_played_at
-                     FROM roms r JOIN library l ON l.rom_id = r.id
-                     WHERE r.file_name = ?",
-                    [file_name.clone().into()],
-                ))
-                .await
-                .ok()
-                .flatten()
-                .and_then(|row| row.try_get::<Option<String>>("", "last_played_at").ok())
-                .flatten();
+        let last_played: Option<String> = db.inner()
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT MAX(l.last_played_at) as last_played_at
+                 FROM roms r JOIN library l ON l.rom_id = r.id
+                 WHERE r.file_name = ?",
+                [file_name.clone().into()],
+            ))
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.try_get::<Option<String>>("", "last_played_at").ok())
+            .flatten();
 
-            files.push(CachedFile { file_name, size, last_played_at: last_played });
-        }
+        files.push(CachedFile { file_name, size, last_played_at: last_played });
     }
 
     files.sort_by(|a, b| {
@@ -2589,33 +2636,41 @@ pub async fn get_cache_info(db: State<'_, DatabaseConnection>) -> AppResult<Cach
 #[tauri::command]
 pub async fn clear_all_cache() -> AppResult<()> {
     let cache_dir = rom_cache_dir();
-    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                if name.starts_with('.') && name.ends_with(".part") {
-                    continue;
+    tokio::task::spawn_blocking(move || {
+        if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if name.starts_with('.') && name.ends_with(".part") {
+                        continue;
+                    }
+                    let _ = std::fs::remove_file(&path);
                 }
-                let _ = std::fs::remove_file(&path);
             }
         }
-    }
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Task join error: {e}")))?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn clear_cache_files(file_names: Vec<String>) -> AppResult<()> {
     let cache_dir = rom_cache_dir();
-    for file_name in &file_names {
-        if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
-            continue;
+    tokio::task::spawn_blocking(move || {
+        for file_name in &file_names {
+            if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+                continue;
+            }
+            let path = cache_dir.join(file_name);
+            if path.is_file() {
+                let _ = std::fs::remove_file(&path);
+            }
         }
-        let path = cache_dir.join(file_name);
-        if path.is_file() {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("Task join error: {e}")))?;
     Ok(())
 }
 

@@ -88,7 +88,10 @@ impl RommClient {
             base_url: base_url.trim_end_matches('/').to_string(),
             username,
             password,
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
             tokens: RwLock::new(None),
         }
     }
@@ -453,7 +456,21 @@ impl RommClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("image/jpeg")
             .to_string();
+        const MAX_IMAGE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+        if let Some(len) = resp.content_length() {
+            if len > MAX_IMAGE_SIZE {
+                return Err(AppError::Other(format!(
+                    "Image too large: {len} bytes (max {MAX_IMAGE_SIZE})"
+                )));
+            }
+        }
         let bytes = resp.bytes().await?;
+        if bytes.len() as u64 > MAX_IMAGE_SIZE {
+            return Err(AppError::Other(format!(
+                "Image too large: {} bytes (max {MAX_IMAGE_SIZE})",
+                bytes.len()
+            )));
+        }
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         Ok(format!("data:{content_type};base64,{b64}"))
     }

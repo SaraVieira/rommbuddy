@@ -6,12 +6,11 @@ import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import { useAppToast } from "../App";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 50;
 
 export default function Search() {
-  const toast = useAppToast();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -68,11 +67,11 @@ export default function Search() {
       setRoms(result.roms);
       setTotal(result.total);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, selectedPlatform, toast]);
+  }, [debouncedQuery, selectedPlatform]);
 
   useEffect(() => {
     doSearch();
@@ -94,18 +93,27 @@ export default function Search() {
       setRoms((prev) => [...prev, ...result.roms]);
       setTotal(result.total);
     } catch (e) {
-      toast(String(e), "error");
+      toast.error(String(e));
       offsetRef.current = newOffset - PAGE_SIZE;
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, total, selectedPlatform, debouncedQuery, toast]);
+  }, [loadingMore, total, selectedPlatform, debouncedQuery]);
 
   const hasMore = offsetRef.current + PAGE_SIZE < total;
 
   const handleSelectRom = (rom: RomWithMeta) => {
     navigate(`/rom/${rom.id}`, { state: { rom } });
   };
+
+  const handleToggleFavorite = useCallback(
+    (romId: number, favorite: boolean) => {
+      setRoms((prev) =>
+        prev.map((r) => (r.id === romId ? { ...r, favorite } : r)),
+      );
+    },
+    [],
+  );
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -161,11 +169,7 @@ export default function Search() {
           <RomGrid
             roms={roms}
             onSelect={handleSelectRom}
-            onToggleFavorite={(romId, fav) =>
-              setRoms((prev) =>
-                prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
-              )
-            }
+            onToggleFavorite={handleToggleFavorite}
             onLoadMore={loadMore}
             hasMore={hasMore}
             loadingMore={loadingMore}
@@ -174,11 +178,7 @@ export default function Search() {
           <RomList
             roms={roms}
             onSelect={handleSelectRom}
-            onToggleFavorite={(romId, fav) =>
-              setRoms((prev) =>
-                prev.map((r) => (r.id === romId ? { ...r, favorite: fav } : r)),
-              )
-            }
+            onToggleFavorite={handleToggleFavorite}
             onLoadMore={loadMore}
             hasMore={hasMore}
             loadingMore={loadingMore}

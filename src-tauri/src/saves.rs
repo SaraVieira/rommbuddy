@@ -84,9 +84,9 @@ fn parse_retroarch_cfg_value(line: &str, key: &str) -> Option<String> {
 
 /// Expand ~ to home directory
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
-            return home.join(&path[2..]).to_string_lossy().into_owned();
+            return home.join(stripped).to_string_lossy().into_owned();
         }
     }
     path.to_string()
@@ -392,7 +392,7 @@ pub fn scan_for_saves(
                 None => continue,
             };
 
-            let metadata = match std::fs::metadata(&path) {
+            let metadata = match std::fs::metadata(path) {
                 Ok(m) => m,
                 Err(_) => continue,
             };

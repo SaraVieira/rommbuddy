@@ -7,26 +7,12 @@ import type {
   CoreMapping,
   EmulatorDef,
 } from "../../types";
-import { useAppToast } from "../../App";
+import { toast } from "sonner";
 import CoreMappings from "./CoreMappings";
 import InstallCores from "./InstallCores";
-
-const DEFAULT_CORES: Record<string, string> = {
-  gb: "gambatte_libretro",
-  gbc: "gambatte_libretro",
-  gba: "mgba_libretro",
-  nes: "mesen_libretro",
-  snes: "snes9x_libretro",
-  n64: "mupen64plus_next_libretro",
-  nds: "melonds_libretro",
-  psx: "swanstation_libretro",
-  genesis: "genesis_plus_gx_libretro",
-  arcade: "fbneo_libretro",
-};
+import { DEFAULT_CORES } from "../../utils/defaultCores";
 
 export default function RetroArchTab() {
-  const toast = useAppToast();
-
   const [retroarchPath, setRetroarchPath] = useState("");
   const [pathValid, setPathValid] = useState(false);
   const [cores, setCores] = useState<CoreInfo[]>([]);
@@ -97,7 +83,7 @@ export default function RetroArchTab() {
     try {
       await invoke("set_retroarch_path", { path });
       setPathValid(true);
-      toast("RetroArch path saved", "success");
+      toast.success("RetroArch path saved");
       const detected: CoreInfo[] = await invoke("detect_cores", {
         retroarchPath: path,
       });
@@ -119,7 +105,7 @@ export default function RetroArchTab() {
       await loadMappings();
     } catch (e) {
       setPathValid(false);
-      toast(String(e), "error");
+      toast.error(String(e));
     }
   };
 

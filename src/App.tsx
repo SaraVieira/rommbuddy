@@ -3,8 +3,8 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSetAtom } from "jotai";
 import { BookOpen, Cpu, Search, Database, Settings, Heart } from "lucide-react";
-import Toast from "./components/Toast";
-import { useToast } from "./hooks/useToast";
+import { toast } from "sonner";
+import { Toaster } from "./components/ui/sonner";
 import { useSyncState, type SyncState } from "./hooks/useSyncState";
 import { useEnrichState, type EnrichState } from "./hooks/useEnrichState";
 import type { PlatformWithCount, SourceConfig } from "./types";
@@ -15,9 +15,6 @@ import {
   searchAtom,
 } from "./store/library";
 
-type ToastFn = (message: string, type?: "success" | "error" | "info") => void;
-
-export const ToastContext = createContext<ToastFn>(() => {});
 export const SyncContext = createContext<SyncState>({
   syncing: false,
   progress: null,
@@ -30,10 +27,6 @@ export const EnrichContext = createContext<EnrichState>({
   startEnrich: async () => {},
   cancelEnrich: async () => {},
 });
-
-export function useAppToast() {
-  return useContext(ToastContext);
-}
 
 export function useAppSync() {
   return useContext(SyncContext);
@@ -51,9 +44,8 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function App() {
-  const { toasts, addToast, removeToast } = useToast();
-  const syncState = useSyncState(addToast);
-  const enrichState = useEnrichState(addToast);
+  const syncState = useSyncState();
+  const enrichState = useEnrichState();
   const navigate = useNavigate();
   const [platformCount, setPlatformCount] = useState(0);
   const [romCount, setRomCount] = useState(0);
@@ -73,15 +65,24 @@ export default function App() {
         );
         setPlatformCount(platforms.length);
         setRomCount(platforms.reduce((sum, p) => sum + p.rom_count, 0));
-      } catch {}
+      } catch (e) {
+        console.error("Failed to load platforms:", e);
+        toast.error(String(e));
+      }
       try {
         const sources: SourceConfig[] = await invoke("get_sources");
         setSourceCount(sources.length);
-      } catch {}
+      } catch (e) {
+        console.error("Failed to load sources:", e);
+        toast.error(String(e));
+      }
       try {
         const count: number = await invoke("get_favorites_count");
         setFavoritesCount(count);
-      } catch {}
+      } catch (e) {
+        console.error("Failed to load favorites count:", e);
+        toast.error(String(e));
+      }
     })();
   }, []);
 
@@ -94,9 +95,8 @@ export default function App() {
   };
 
   return (
-    <ToastContext.Provider value={addToast}>
-      <SyncContext.Provider value={syncState}>
-        <EnrichContext.Provider value={enrichState}>
+    <SyncContext.Provider value={syncState}>
+      <EnrichContext.Provider value={enrichState}>
         <div className="flex h-screen overflow-hidden">
           <nav className="w-sidebar bg-bg-sidebar border-r border-border flex flex-col shrink-0">
             <div
@@ -264,9 +264,8 @@ export default function App() {
             </div>
           </main>
         </div>
-        <Toast toasts={toasts} onRemove={removeToast} />
-        </EnrichContext.Provider>
-      </SyncContext.Provider>
-    </ToastContext.Provider>
+        <Toaster />
+      </EnrichContext.Provider>
+    </SyncContext.Provider>
   );
 }

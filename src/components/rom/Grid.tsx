@@ -48,7 +48,8 @@ function VirtualGrid({
 
   useEffect(() => {
     virtualizer.measure();
-  }, [rowHeight, columns, virtualizer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowHeight, columns]);
 
   const dataRowCount = Math.ceil(roms.length / columns);
 
@@ -158,7 +159,8 @@ export default function RomGrid({
   }, [recalcColumns]);
 
   // Only remount virtualizer on filter/search reset (first rom id changes), not on appends
-  const gridKey = useMemo(() => `${roms[0]?.id ?? 0}`, [roms]);
+  const firstRomId = roms[0]?.id ?? 0;
+  const gridKey = useMemo(() => `${firstRomId}`, [firstRomId]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

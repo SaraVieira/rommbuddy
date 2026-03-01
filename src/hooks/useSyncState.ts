@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { ScanProgress } from "../types";
 
 export interface SyncState {
@@ -9,10 +10,7 @@ export interface SyncState {
   cancelSync: (sourceId: number) => Promise<void>;
 }
 
-export function useSyncState(
-  toast: (message: string, type?: "success" | "error" | "info") => void,
-  onComplete?: () => void
-): SyncState {
+export function useSyncState(onComplete?: () => void): SyncState {
   const [syncing, setSyncing] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const syncingRef = useRef(false);
@@ -29,17 +27,17 @@ export function useSyncState(
           setProgress(p);
         };
         await invoke("sync_source", { sourceId, channel });
-        toast("Sync complete!", "success");
+        toast.success("Sync complete!");
         onComplete?.();
       } catch (e) {
-        toast(`Sync failed: ${e}`, "error");
+        toast.error(`Sync failed: ${e}`);
       } finally {
         syncingRef.current = false;
         setSyncing(false);
         setProgress(null);
       }
     },
-    [toast, onComplete]
+    [onComplete]
   );
 
   const cancelSync = useCallback(async (sourceId: number) => {

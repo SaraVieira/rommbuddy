@@ -7,11 +7,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useMemo } from "react";
+import { formatSize } from "@/utils/format";
 
 export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
-  const fileSizeMB = rom.file_size
-    ? `${(rom.file_size / 1024 / 1024).toFixed(1)} MB`
-    : "—";
+  const fileSizeMB = formatSize(rom.file_size);
 
   // Sanitize release date — reject dates with year > 2100 or malformed values
   const releaseDate = useMemo(() => {
@@ -43,7 +42,6 @@ export const MetadataGrid = ({ rom }: { rom: RomWithMeta }) => {
       icon: Database,
     },
   ].filter(Boolean) as { label: string; url: string; icon: typeof BookOpen }[];
-  console.log(rom.rating);
   return (
     <>
       <div className="flex bg-bg-card border border-border">

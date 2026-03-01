@@ -19,13 +19,13 @@ export interface RomWithMeta {
   screenshot_urls: string[];
   source_id: number;
   source_rom_id: string | null;
-  source_type: string | null;
+  source_type: "local" | "romm" | null;
   retroachievements_game_id: string | null;
   wikipedia_url: string | null;
   igdb_id: number | null;
   thegamesdb_game_id: string | null;
   favorite: boolean;
-  verification_status: string | null;
+  verification_status: "verified" | "bad_dump" | null;
   dat_game_name: string | null;
 }
 
