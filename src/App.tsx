@@ -6,6 +6,7 @@ import { BookOpen, Cpu, Search, Database, Settings, Heart } from "lucide-react";
 import Toast from "./components/Toast";
 import { useToast } from "./hooks/useToast";
 import { useSyncState, type SyncState } from "./hooks/useSyncState";
+import { useEnrichState, type EnrichState } from "./hooks/useEnrichState";
 import type { PlatformWithCount, SourceConfig } from "./types";
 import {
   favoritesOnlyAtom,
@@ -23,6 +24,12 @@ export const SyncContext = createContext<SyncState>({
   startSync: async () => {},
   cancelSync: async () => {},
 });
+export const EnrichContext = createContext<EnrichState>({
+  enriching: false,
+  progress: null,
+  startEnrich: async () => {},
+  cancelEnrich: async () => {},
+});
 
 export function useAppToast() {
   return useContext(ToastContext);
@@ -30,6 +37,10 @@ export function useAppToast() {
 
 export function useAppSync() {
   return useContext(SyncContext);
+}
+
+export function useAppEnrich() {
+  return useContext(EnrichContext);
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -42,6 +53,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export default function App() {
   const { toasts, addToast, removeToast } = useToast();
   const syncState = useSyncState(addToast);
+  const enrichState = useEnrichState(addToast);
   const navigate = useNavigate();
   const [platformCount, setPlatformCount] = useState(0);
   const [romCount, setRomCount] = useState(0);
@@ -84,6 +96,7 @@ export default function App() {
   return (
     <ToastContext.Provider value={addToast}>
       <SyncContext.Provider value={syncState}>
+        <EnrichContext.Provider value={enrichState}>
         <div className="flex h-screen overflow-hidden">
           <nav className="w-sidebar bg-bg-sidebar border-r border-border flex flex-col shrink-0">
             <div
@@ -168,16 +181,91 @@ export default function App() {
                   {sourceCount}
                 </span>
               </div>
-              <div className="mt-lg text-badge text-accent font-semibold tracking-[1px] uppercase">
-                [synced]
+              <div
+                className={`mt-lg text-badge font-semibold tracking-[1px] uppercase ${syncState.syncing || enrichState.enriching ? "text-yellow-400" : "text-accent"}`}
+              >
+                {syncState.syncing
+                  ? "[syncing...]"
+                  : enrichState.enriching
+                    ? "[enriching...]"
+                    : "[synced]"}
               </div>
             </div>
           </nav>
-          <main className="flex-1 overflow-y-auto py-5xl px-6xl pt-[38px]">
-            <Outlet />
+          <main className="flex-1 overflow-y-auto">
+            {syncState.syncing && syncState.progress && (
+              <div className="sticky top-0 z-50 flex items-center gap-xl px-6xl py-md bg-bg-sidebar border-b border-border">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-lg mb-xs">
+                    <span className="text-badge font-mono text-accent uppercase tracking-[1px] shrink-0">
+                      Syncing
+                    </span>
+                    <span className="text-badge font-mono text-text-muted truncate">
+                      {syncState.progress.current_item}
+                    </span>
+                    <span className="text-badge font-mono text-text-secondary shrink-0">
+                      {syncState.progress.current} / {syncState.progress.total}
+                      {syncState.progress.total > 0 &&
+                        ` (${Math.round((syncState.progress.current / syncState.progress.total) * 100)}%)`}
+                    </span>
+                  </div>
+                  <div className="h-1 bg-bg-elevated overflow-hidden">
+                    <div
+                      className="h-full bg-accent transition-[width] duration-200 ease-out shadow-accent-glow"
+                      style={{
+                        width: `${syncState.progress.total > 0 ? Math.round((syncState.progress.current / syncState.progress.total) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="btn btn-secondary btn-sm shrink-0"
+                  onClick={() => syncState.cancelSync(syncState.progress!.source_id)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {enrichState.enriching && enrichState.progress && (
+              <div className="sticky top-0 z-50 flex items-center gap-xl px-6xl py-md bg-bg-sidebar border-b border-border">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-lg mb-xs">
+                    <span className="text-badge font-mono text-yellow-400 uppercase tracking-[1px] shrink-0">
+                      Enriching
+                    </span>
+                    <span className="text-badge font-mono text-text-muted truncate">
+                      {enrichState.progress.current_item}
+                    </span>
+                    <span className="text-badge font-mono text-text-secondary shrink-0">
+                      {enrichState.progress.current} / {enrichState.progress.total}
+                      {enrichState.progress.total > 0 &&
+                        ` (${Math.round((enrichState.progress.current / enrichState.progress.total) * 100)}%)`}
+                    </span>
+                  </div>
+                  <div className="h-1 bg-bg-elevated overflow-hidden">
+                    <div
+                      className="h-full bg-yellow-400 transition-[width] duration-200 ease-out"
+                      style={{
+                        width: `${enrichState.progress.total > 0 ? Math.round((enrichState.progress.current / enrichState.progress.total) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="btn btn-secondary btn-sm shrink-0"
+                  onClick={() => enrichState.cancelEnrich()}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            <div className="py-5xl px-6xl pt-[38px]">
+              <Outlet />
+            </div>
           </main>
         </div>
         <Toast toasts={toasts} onRemove={removeToast} />
+        </EnrichContext.Provider>
       </SyncContext.Provider>
     </ToastContext.Provider>
   );

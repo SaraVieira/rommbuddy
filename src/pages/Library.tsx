@@ -1,18 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { useAtom } from "jotai";
 import type {
   RomWithMeta,
   PlatformWithCount,
-  ScanProgress,
   LibraryPage as LibraryPageType,
 } from "../types";
 import RomGrid from "../components/rom/Grid";
 import RomList from "../components/rom/List";
 import PlatformFilter from "../components/PlatformFilter";
 import ViewToggle from "../components/ViewToggle";
-import { useAppToast } from "../App";
+import { useAppToast, useAppEnrich } from "../App";
 import {
   searchInputAtom,
   searchAtom,
@@ -25,16 +24,13 @@ const PAGE_SIZE = 50;
 export default function Library() {
   const navigate = useNavigate();
   const toast = useAppToast();
+  const { enriching, startEnrich } = useAppEnrich();
 
   const [roms, setRoms] = useState<RomWithMeta[]>([]);
   const [total, setTotal] = useState(0);
   const [platforms, setPlatforms] = useState<PlatformWithCount[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState<ScanProgress | null>(
-    null,
-  );
 
   // Local offset — internal to loading logic
   const offsetRef = useRef(0);
@@ -135,35 +131,9 @@ export default function Library() {
   );
 
   const handleFetchMetadata = useCallback(async () => {
-    if (enriching) return;
-    setEnriching(true);
-    setEnrichProgress(null);
-    try {
-      // Check if LaunchBox DB is imported, download + import if not
-      const hasDb: boolean = await invoke("has_launchbox_db");
-      if (!hasDb) {
-        const dlChannel = new Channel<ScanProgress>();
-        dlChannel.onmessage = (p) => setEnrichProgress(p);
-        await invoke("update_launchbox_db", { channel: dlChannel });
-      }
-
-      // Run enrichment — pass current filters so only visible ROMs are enriched
-      const channel = new Channel<ScanProgress>();
-      channel.onmessage = (p) => setEnrichProgress(p);
-      await invoke("fetch_metadata", {
-        platformId: selectedPlatform,
-        search: search || null,
-        channel,
-      });
-      toast("Metadata enrichment complete!", "success");
-      loadRoms();
-    } catch (e) {
-      toast(String(e), "error");
-    } finally {
-      setEnriching(false);
-      setEnrichProgress(null);
-    }
-  }, [enriching, selectedPlatform, search, toast, loadRoms]);
+    await startEnrich(selectedPlatform, search || null);
+    loadRoms();
+  }, [startEnrich, selectedPlatform, search, loadRoms]);
 
   if (total === 0 && !loading && !search && selectedPlatform === null) {
     return (
@@ -219,31 +189,6 @@ export default function Library() {
           {enriching ? "Enriching..." : "Fetch Metadata"}
         </button>
       </div>
-
-      {enrichProgress && (
-        <div className="mb-md px-sm py-xs bg-bg-elevated border border-border rounded-none text-body text-text-muted shrink-0">
-          <div className="flex items-center justify-between">
-            <span className="truncate mr-md">
-              {enrichProgress.current_item}
-            </span>
-            {enrichProgress.total > 0 && (
-              <span className="shrink-0">
-                {enrichProgress.current} / {enrichProgress.total}
-              </span>
-            )}
-          </div>
-          {enrichProgress.total > 1 && (
-            <div className="mt-xs h-[3px] bg-border">
-              <div
-                className="h-full bg-accent transition-[width] duration-150"
-                style={{
-                  width: `${(enrichProgress.current / enrichProgress.total) * 100}%`,
-                }}
-              />
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="flex-1 min-h-0">
         {loading ? (

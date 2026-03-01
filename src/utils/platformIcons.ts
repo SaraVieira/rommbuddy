@@ -20,6 +20,7 @@ export const ICON_MAP: Record<string, string> = {
   nds: "nintendo-ds.png",
   "3ds": "nintendo-ds-lite.png",
   gamecube: "gc.png",
+  ngc: "gc.png",
   wii: "wii.png",
   wiiu: "wiiu.png",
   switch: "switch.png",
@@ -27,7 +28,9 @@ export const ICON_MAP: Record<string, string> = {
   dsi: "dsi.png",
   n3ds: "n3ds.png",
   vb: "nintendo-virtual-boy.png",
+  virtualboy: "nintendo-virtual-boy.png",
   pokemini: "pkm-mini.png",
+  "pokemon-mini": "pkm-mini.png",
   sufami: "sufami.png",
 
   // ── Sony ──
@@ -89,6 +92,7 @@ export const ICON_MAP: Record<string, string> = {
   pce: "nec-pc-engine-duo.png",
   pcecd: "nec-turbografxcd.png",
   sgfx: "nec-supergrafx.png",
+  supergrafx: "nec-supergrafx.png",
   pcfx: "nec-pc-fx.png",
 
   // ── Atari ──
@@ -115,9 +119,12 @@ export const ICON_MAP: Record<string, string> = {
   channelf: "channelf.png",
   "3do": "3do-panasonic.png",
   cdi: "cdi.png",
+  "philips-cd-i": "cdi.png",
   megaduck: "mega.png",
+  "mega-duck-slash-cougar-boy": "mega.png",
   supervision: "watara.png",
   odyssey2: "odyssey.png",
+  "odyssey-2": "odyssey.png",
   odyssey: "odyssey.png",
   openbor: "openbor.png",
   creativision: "creativision.png",
@@ -165,6 +172,7 @@ export const ICON_MAP: Record<string, string> = {
   gx4000: "gx4000.png",
   amstradpcw: "amstrad-cpc-464.png",
   zxspectrum: "sinclair-zx-spectrum.png",
+  zxs: "sinclair-zx-spectrum.png",
   zxsnext: "sinclair-zx-spectrum.png",
   zx81: "sinclair-zx-81.png",
   zx80: "sinclair-zx-81.png",
@@ -192,7 +200,9 @@ export const ICON_MAP: Record<string, string> = {
 
   // ── Fantasy Consoles ──
   tic80: "tic.png",
+  "tic-80": "tic.png",
   pico8: "pico8.png",
+  pico: "pico8.png",
   wasm4: "wasm4.png",
 
   // ── Other consoles (continued) ──
